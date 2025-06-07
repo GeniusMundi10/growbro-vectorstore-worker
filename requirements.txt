@@ -1,0 +1,14 @@
+flask
+flask-cors
+requests
+supabase
+faiss-cpu
+langchain
+langchain-community
+langchain-openai
+langchain-core
+langchain-text-splitters
+transformers
+sentence-transformers
+firecrawl-py
+gunicorn
