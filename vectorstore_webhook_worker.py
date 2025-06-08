@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from rag_dynamic import DynamicRAGAgent
 from supabase_client import supabase
+import traceback
 
 app = Flask(__name__)
 
@@ -27,6 +28,8 @@ def trigger_vectorstore():
         else:
             return jsonify({"status": "error", "message": "Vectorstore not ready after build"}), 500
     except Exception as e:
+        print("[ERROR]", e)
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
