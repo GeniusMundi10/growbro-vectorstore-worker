@@ -12,3 +12,5 @@ transformers
 sentence-transformers
 firecrawl-py
 gunicorn
+PyPDF2
+python-docx

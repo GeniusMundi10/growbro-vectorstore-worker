@@ -148,36 +148,16 @@ def upload_faiss_index_to_supabase(ai_id, supabase_url, bucket, supabase_key, lo
     return True
 
 
-def fetch_html_with_playwright(url, timeout=45):
-    """
-    Uses Playwright to fetch fully rendered HTML from a JS-heavy site.
-    Returns the HTML string, or None if Playwright is not available or fails.
-    """
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout*1000)
-            html = page.content()
-            browser.close()
-            return html
-    except Exception as e:
-        print(f"[fetch_html_with_playwright] Playwright failed or not installed: {e}")
-        return None
+
 
 def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=10):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
     Returns: list of LangChain Document objects
     """
-    if FirecrawlApp is None or ScrapeOptions is None:
-        print("[Firecrawl] SDK not installed, falling back to generic extraction.")
-        return generic_extract_website_text(urls, min_words=min_words)
+    
     api_key = firecrawl_api_key or os.environ.get("FIRECRAWL_API_KEY")
-    if not api_key:
-        print("[Firecrawl] FIRECRAWL_API_KEY not set, falling back to generic extraction.")
-        return generic_extract_website_text(urls, min_words=min_words)
+    
     app = FirecrawlApp(api_key=api_key)
     all_documents = []
     for url in urls:
@@ -203,85 +183,12 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 metadata = getattr(item, 'metadata', {})
                 all_documents.append(Document(page_content=content, metadata=metadata))
         except Exception as e:
-            print(f"[Firecrawl] Error crawling {url}: {e}. Falling back to generic extraction for this URL.")
+            print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
             # Fallback for this URL only
-            docs = generic_extract_website_text([url], min_words=min_words)
-            all_documents.extend(docs)
+            
     return all_documents
 
-def generic_extract_website_text(urls, min_words=10):
-    """
-    Extracts and preprocesses text from a list of URLs.
-    Uses Playwright for JS-rendered sites, falls back to requests if needed.
-    Returns: list of LangChain Document objects
-    """
-    from bs4 import BeautifulSoup, Tag, NavigableString
-    from langchain_core.documents import Document
-    import requests
 
-    def get_visible_text(soup):
-        for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'noscript']):
-            tag.decompose()
-        texts = []
-        if soup.body:
-            for elem in soup.body.descendants:
-                if isinstance(elem, NavigableString):
-                    text = str(elem).strip()
-                    if text and len(text.split()) >= min_words:
-                        texts.append(text)
-        return "\n".join(texts)
-
-    all_documents = []
-    for url in urls:
-        html = fetch_html_with_playwright(url)
-        if html is None:
-            # Fallback to requests
-            try:
-                resp = requests.get(url, timeout=10)
-                resp.raise_for_status()
-                html = resp.text
-            except Exception as e:
-                print(f"[generic_extract_website_text] Error fetching {url}: {e}")
-                continue
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            main = soup.find('main') or soup.body or soup
-            documents = []
-            current_section = []
-            current_heading = None
-
-            def flush_section():
-                if current_section:
-                    text = "\n".join(current_section).strip()
-                    if text and len(text.split()) >= min_words:
-                        documents.append(Document(
-                            page_content=text,
-                            metadata={"source": url, "section_heading": current_heading}
-                        ))
-                    current_section.clear()
-
-            for elem in main.descendants:
-                if isinstance(elem, Tag):
-                    if elem.name in ['h1', 'h2', 'h3']:
-                        flush_section()
-                        current_heading = elem.get_text(strip=True)
-                    elif elem.name in ['p', 'li', 'div', 'span']:
-                        txt = elem.get_text(strip=True)
-                        if txt and len(txt.split()) >= min_words:
-                            current_section.append(txt)
-            flush_section()
-
-            if not documents:
-                visible_text = get_visible_text(soup)
-                if visible_text:
-                    documents.append(Document(
-                        page_content=visible_text,
-                        metadata={"source": url, "section_heading": "ALL_VISIBLE_TEXT"}
-                    ))
-            all_documents.extend(documents)
-        except Exception as e:
-            print(f"[generic_extract_website_text] Error processing {url}: {e}")
-    return all_documents
 
 
 def generic_create_vectorstore(documents, embeddings, vectorstore_path, chunk_size=3000, chunk_overlap=300):
