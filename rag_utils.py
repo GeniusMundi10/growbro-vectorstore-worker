@@ -3,7 +3,7 @@ rag_utils.py
 Reusable, generic utilities for RAG pipelines (data extraction, vectorstore creation, prompt templating).
 """
 
-from bs4 import BeautifulSoup, Tag
+
 import requests
 from langchain_core.documents import Document
 import mimetypes
