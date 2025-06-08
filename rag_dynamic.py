@@ -183,8 +183,17 @@ class DynamicRAGAgent:
         if SUPABASE_URL and SUPABASE_KEY:
             try:
                 print(f"[DynamicRAGAgent] Uploading FAISS index for {self.ai_id} to Supabase Storage bucket '{SUPABASE_BUCKET}'...")
-                upload_faiss_index_to_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY)
+                upload_faiss_index_to_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
                 print(f"[DynamicRAGAgent] Uploaded FAISS index for {self.ai_id} to Supabase Storage.")
+                # Write and upload version.txt
+                import datetime, os
+                vectorstore_path = f"faiss_index_{self.ai_id}"
+                version_txt_path = os.path.join(vectorstore_path, "version.txt")
+                version = datetime.datetime.utcnow().isoformat()
+                with open(version_txt_path, "w") as f:
+                    f.write(version)
+                upload_faiss_index_to_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
+                print(f"[DynamicRAGAgent] Uploaded version.txt for {self.ai_id} to Supabase Storage.")
             except Exception as e:
                 print(f"[DynamicRAGAgent] Warning: Could not upload FAISS index to Supabase: {e}")
 
