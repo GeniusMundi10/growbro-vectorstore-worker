@@ -123,7 +123,7 @@ class DynamicRAGAgent:
 
         # 2. ai_links (optional)
         try:
-            ai_links_res = supabase.table("ai_website").select("*").eq("user_id", self.config["user_id"]).execute()
+            ai_links_res = supabase.table("ai_website").select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
             link_urls = [row["url"] for row in (ai_links_res.data or []) if row.get("url")]
             if link_urls:
                 print(f"[DynamicRAGAgent] Extracting text for ai_links URLs: {link_urls}")
@@ -136,7 +136,7 @@ class DynamicRAGAgent:
         # 3. ai_file (optional, use 'url' to download and extract text)
         import requests
         try:
-            ai_files_res = supabase.table("ai_file").select("*").eq("user_id", self.config["user_id"]).execute()
+            ai_files_res = supabase.table("ai_file").select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
             file_rows = ai_files_res.data or []
             for file_row in file_rows:
                 file_url = file_row.get("url")
