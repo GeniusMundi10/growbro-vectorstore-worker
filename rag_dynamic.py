@@ -12,7 +12,8 @@ from rag_utils import (
     get_hybrid_retriever,
     get_cross_encoder_reranker,
     get_compression_retriever,
-    create_conversational_retrieval_chain
+    create_conversational_retrieval_chain,
+    aggregate_crawl_analytics
 )
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
@@ -79,7 +80,8 @@ class DynamicRAGAgent:
         import os
         from rag_utils import (
             extract_website_text_with_firecrawl, generic_create_vectorstore, load_faiss_vectorstore,
-            get_embeddings, get_text_splitter, download_faiss_index_from_supabase, upload_faiss_index_to_supabase, extract_file_text
+            get_embeddings, get_text_splitter, download_faiss_index_from_supabase, upload_faiss_index_to_supabase, extract_file_text,
+            aggregate_crawl_analytics
         )
         from langchain_core.documents import Document
         from supabase_client import SUPABASE_URL, SUPABASE_KEY, supabase
