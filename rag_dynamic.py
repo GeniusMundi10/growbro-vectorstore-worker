@@ -105,8 +105,12 @@ class DynamicRAGAgent:
             print("[DynamicRAGAgent] Vectorstore loaded.")
             return
 
-        # --- Aggregate all sources ---
+        # --- Aggregate all sources and track analytics ---
         documents = []
+        website_analytics = None
+        link_analytics = None
+        file_analytics = None
+        file_urls = []
 
         # 1. Website (mandatory)
         website_urls = []
@@ -117,7 +121,8 @@ class DynamicRAGAgent:
                 website_urls = self.config["website"]
         if website_urls:
             print(f"[DynamicRAGAgent] Extracting website text for URLs: {website_urls}")
-            documents += extract_website_text_with_firecrawl(website_urls)
+            docs, website_analytics = extract_website_text_with_firecrawl(website_urls, return_analytics=True)
+            documents += docs
         else:
             print("[DynamicRAGAgent] No website URLs found in config (this should not happen).")
 
@@ -127,7 +132,8 @@ class DynamicRAGAgent:
             link_urls = [row["url"] for row in (ai_links_res.data or []) if row.get("url")]
             if link_urls:
                 print(f"[DynamicRAGAgent] Extracting text for ai_links URLs: {link_urls}")
-                documents += extract_website_text_with_firecrawl(link_urls)
+                docs, link_analytics = extract_website_text_with_firecrawl(link_urls, return_analytics=True)
+                documents += docs
             else:
                 print("[DynamicRAGAgent] No ai_links URLs found for this user.")
         except Exception as e:
@@ -141,6 +147,7 @@ class DynamicRAGAgent:
             for file_row in file_rows:
                 file_url = file_row.get("url")
                 if file_url:
+                    file_urls.append(file_url)
                     try:
                         resp = requests.get(file_url)
                         resp.raise_for_status()
@@ -160,10 +167,23 @@ class DynamicRAGAgent:
                         print(f"[DynamicRAGAgent] Error downloading or extracting file: {file_url}, error: {e}")
                 else:
                     print("[DynamicRAGAgent] ai_file row missing url.")
+            if file_urls:
+                file_analytics = {"pages_crawled": len(file_urls), "urls_crawled": file_urls}
             if not file_rows:
                 print("[DynamicRAGAgent] No ai_file entries found for this user.")
         except Exception as e:
             print(f"[DynamicRAGAgent] Error fetching ai_file: {e}")
+
+        # --- Aggregate analytics and update Supabase ---
+        analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
+        try:
+            supabase.table("business_info").update({
+                "total_pages_crawled": analytics['total_pages_crawled'],
+                "urls_crawled": analytics['urls_crawled']
+            }).eq("id", self.ai_id).execute()
+            print(f"[DynamicRAGAgent] Saved crawl analytics for {self.ai_id}: {analytics}")
+        except Exception as e:
+            print(f"[DynamicRAGAgent] Failed to save crawl analytics: {e}")
 
         # --- Chunk, embed, and save vectorstore ---
         if not documents:

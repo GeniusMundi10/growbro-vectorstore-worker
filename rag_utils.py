@@ -9,6 +9,30 @@ from langchain_core.documents import Document
 import mimetypes
 
 # --- File extraction utility ---
+def generic_extract_website_text(urls, min_words=10, return_analytics=False):
+    """
+    Fallback extraction for website URLs. Returns list of LangChain Document objects.
+    If return_analytics=True, returns (documents, analytics_dict) where analytics_dict has keys 'pages_crawled', 'urls_crawled'.
+    """
+    from langchain_core.documents import Document
+    import requests
+    all_documents = []
+    urls_crawled = []
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            text = resp.text
+            if len(text.split()) >= min_words:
+                all_documents.append(Document(page_content=text, metadata={"url": url}))
+                urls_crawled.append(url)
+        except Exception as e:
+            print(f"[GenericExtract] Error extracting {url}: {e}")
+    if return_analytics:
+        urls_crawled = [u for u in set(urls_crawled) if u]
+        return all_documents, {"pages_crawled": len(urls_crawled), "urls_crawled": urls_crawled}
+    return all_documents
+
 def extract_file_text(file_path):
     """
     Extract text from a file (PDF, TXT, DOCX, etc.).
@@ -72,6 +96,19 @@ from langchain.retrievers import ContextualCompressionRetriever
 from langchain.chains import ConversationalRetrievalChain
 from langchain_core.prompts import ChatPromptTemplate
 
+def aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics):
+    """
+    Aggregate analytics from all sources. Each argument is a dict with keys 'pages_crawled', 'urls_crawled'.
+    Returns a dict: {'total_pages_crawled': int, 'urls_crawled': list}
+    """
+    all_urls = set()
+    for analytics in (website_analytics, link_analytics, file_analytics):
+        if analytics and 'urls_crawled' in analytics:
+            all_urls.update(analytics['urls_crawled'])
+    return {
+        'total_pages_crawled': len(all_urls),
+        'urls_crawled': list(all_urls)
+    }
 
 # --- FAISS index upload/download utilities for Supabase Storage ---
 import requests
@@ -150,16 +187,16 @@ def upload_faiss_index_to_supabase(ai_id, supabase_url, bucket, supabase_key, lo
 
 
 
-def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=10):
+def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=10, return_analytics=False):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
     Returns: list of LangChain Document objects
+    If return_analytics=True, returns (documents, analytics_dict) where analytics_dict has keys 'pages_crawled', 'urls_crawled'.
     """
-    
     api_key = firecrawl_api_key or os.environ.get("FIRECRAWL_API_KEY")
-    
     app = FirecrawlApp(api_key=api_key)
     all_documents = []
+    urls_crawled = []
     for url in urls:
         try:
             # Ensure URL has scheme
@@ -182,10 +219,16 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
                 metadata = getattr(item, 'metadata', {})
                 all_documents.append(Document(page_content=content, metadata=metadata))
+                page_url = metadata.get('url') or url
+                urls_crawled.append(page_url)
         except Exception as e:
             print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
             # Fallback for this URL only
-            
+            # Optionally could call generic_extract_website_text here and add to docs/analytics
+    if return_analytics:
+        # Remove duplicates and nulls
+        urls_crawled = [u for u in set(urls_crawled) if u]
+        return all_documents, {"pages_crawled": len(urls_crawled), "urls_crawled": urls_crawled}
     return all_documents
 
 
