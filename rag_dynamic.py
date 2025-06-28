@@ -178,14 +178,7 @@ class DynamicRAGAgent:
 
         # --- Aggregate analytics and update Supabase ---
         analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
-        try:
-            supabase.table("business_info").update({
-                "total_pages_crawled": analytics['total_pages_crawled'],
-                "urls_crawled": analytics['urls_crawled']
-            }).eq("id", self.ai_id).execute()
-            print(f"[DynamicRAGAgent] Saved crawl analytics for {self.ai_id}: {analytics}")
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Failed to save crawl analytics: {e}")
+        # Save analytics after vectorstore upload and after setting vectorstore_ready
 
         # --- Chunk, embed, and save vectorstore ---
         if not documents:
@@ -218,6 +211,22 @@ class DynamicRAGAgent:
                 print(f"[DynamicRAGAgent] Uploaded version.txt for {self.ai_id} to Supabase Storage.")
             except Exception as e:
                 print(f"[DynamicRAGAgent] Warning: Could not upload FAISS index to Supabase: {e}")
+        # Set vectorstore_ready=True after upload
+        try:
+            supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
+            print(f"[DynamicRAGAgent] Set vectorstore_ready=True for {self.ai_id}")
+        except Exception as e:
+            print(f"[DynamicRAGAgent] Failed to set vectorstore_ready: {e}")
+        # Now update analytics
+        analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
+        try:
+            supabase.table("business_info").update({
+                "total_pages_crawled": analytics['total_pages_crawled'],
+                "urls_crawled": analytics['urls_crawled']
+            }).eq("id", self.ai_id).execute()
+            print(f"[DynamicRAGAgent] Saved crawl analytics for {self.ai_id}: {analytics}")
+        except Exception as e:
+            print(f"[DynamicRAGAgent] Failed to save crawl analytics: {e}")
 
     def _fetch_config(self):
         res = supabase.table("business_info").select("*").eq("id", self.ai_id).execute()
