@@ -9,30 +9,6 @@ from langchain_core.documents import Document
 import mimetypes
 
 # --- File extraction utility ---
-def generic_extract_website_text(urls, min_words=10, return_analytics=False):
-    """
-    Fallback extraction for website URLs. Returns list of LangChain Document objects.
-    If return_analytics=True, returns (documents, analytics_dict) where analytics_dict has keys 'pages_crawled', 'urls_crawled'.
-    """
-    from langchain_core.documents import Document
-    import requests
-    all_documents = []
-    urls_crawled = []
-    for url in urls:
-        try:
-            resp = requests.get(url, timeout=10)
-            resp.raise_for_status()
-            text = resp.text
-            if len(text.split()) >= min_words:
-                all_documents.append(Document(page_content=text, metadata={"url": url}))
-                urls_crawled.append(url)
-        except Exception as e:
-            print(f"[GenericExtract] Error extracting {url}: {e}")
-    if return_analytics:
-        urls_crawled = [u for u in set(urls_crawled) if u]
-        return all_documents, {"pages_crawled": len(urls_crawled), "urls_crawled": urls_crawled}
-    return all_documents
-
 def extract_file_text(file_path):
     """
     Extract text from a file (PDF, TXT, DOCX, etc.).
@@ -187,7 +163,7 @@ def upload_faiss_index_to_supabase(ai_id, supabase_url, bucket, supabase_key, lo
 
 
 
-def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=10, return_analytics=False):
+def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=20, return_analytics=False):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
     Returns: list of LangChain Document objects
