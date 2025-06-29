@@ -74,17 +74,24 @@ from langchain_core.prompts import ChatPromptTemplate
 
 def aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics):
     """
-    Aggregate analytics from all sources. Each argument is a dict with keys 'pages_crawled', 'urls_crawled'.
-    Returns a dict: {'total_pages_crawled': int, 'urls_crawled': list}
+    Aggregate analytics from all sources.
+    - total_pages_crawled: count of unique URLs from website and ai_links only
+    - files_indexed: count of ai_files (file_analytics['files_indexed'] if present, else 0)
+    Returns a dict: {'total_pages_crawled': int, 'urls_crawled': list, 'files_indexed': int}
     """
     all_urls = set()
-    for analytics in (website_analytics, link_analytics, file_analytics):
+    for analytics in (website_analytics, link_analytics):
         if analytics and 'urls_crawled' in analytics:
             all_urls.update(analytics['urls_crawled'])
+    files_indexed = 0
+    if file_analytics and 'files_indexed' in file_analytics:
+        files_indexed = file_analytics['files_indexed']
     return {
         'total_pages_crawled': len(all_urls),
-        'urls_crawled': list(all_urls)
+        'urls_crawled': list(all_urls),
+        'files_indexed': files_indexed
     }
+
 
 # --- FAISS index upload/download utilities for Supabase Storage ---
 import requests

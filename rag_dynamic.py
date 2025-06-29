@@ -170,7 +170,7 @@ class DynamicRAGAgent:
                 else:
                     print("[DynamicRAGAgent] ai_file row missing url.")
             if file_urls:
-                file_analytics = {"pages_crawled": len(file_urls), "urls_crawled": file_urls}
+                file_analytics = {"files_indexed": len(file_urls)}
             if not file_rows:
                 print("[DynamicRAGAgent] No ai_file entries found for this user.")
         except Exception as e:
@@ -222,7 +222,8 @@ class DynamicRAGAgent:
         try:
             supabase.table("business_info").update({
                 "total_pages_crawled": analytics['total_pages_crawled'],
-                "urls_crawled": analytics['urls_crawled']
+                "urls_crawled": analytics['urls_crawled'],
+                "files_indexed": analytics['files_indexed']
             }).eq("id", self.ai_id).execute()
             print(f"[DynamicRAGAgent] Saved crawl analytics for {self.ai_id}: {analytics}")
         except Exception as e:
