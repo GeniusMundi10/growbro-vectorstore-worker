@@ -19,8 +19,9 @@ def trigger_vectorstore():
     if vectorstore_ready is not False:
         return jsonify({"status": "ignored", "message": "No action needed"}), 200
 
+    session_cookie = record.get("session_cookie")
     try:
-        agent = DynamicRAGAgent(ai_id)
+        agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie)
         agent.extract_and_build_vectorstore(force_rebuild=True)  # Always rebuild!
         if agent.is_ready():
             supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()

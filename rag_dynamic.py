@@ -25,7 +25,8 @@ class DynamicRAGAgent:
     Only use get_response() for answering and extract_and_build_vectorstore() for building vectorstore.
     All other methods are internal.
     """
-    def __init__(self, ai_id, memory=None, auto_build_vectorstore=False):
+    def __init__(self, ai_id, memory=None, auto_build_vectorstore=False, session_cookie=None):
+        self.session_cookie = session_cookie
         self.ai_id = ai_id
         self.memory = memory or ConversationBufferMemory(
             memory_key="chat_history",
@@ -123,7 +124,7 @@ class DynamicRAGAgent:
                 website_urls = self.config["website"]
         if website_urls:
             print(f"[DynamicRAGAgent] Extracting website text for URLs: {website_urls}")
-            docs, website_analytics = extract_website_text_with_firecrawl(website_urls, return_analytics=True)
+            docs, website_analytics = extract_website_text_with_firecrawl(website_urls, return_analytics=True, session_cookie=self.session_cookie)
             documents += docs
         else:
             print("[DynamicRAGAgent] No website URLs found in config (this should not happen).")
@@ -134,7 +135,7 @@ class DynamicRAGAgent:
             link_urls = [row["url"] for row in (ai_links_res.data or []) if row.get("url")]
             if link_urls:
                 print(f"[DynamicRAGAgent] Extracting text for ai_links URLs: {link_urls}")
-                docs, link_analytics = extract_website_text_with_firecrawl(link_urls, return_analytics=True)
+                docs, link_analytics = extract_website_text_with_firecrawl(link_urls, return_analytics=True, session_cookie=self.session_cookie)
                 documents += docs
             else:
                 print("[DynamicRAGAgent] No ai_links URLs found for this user.")
