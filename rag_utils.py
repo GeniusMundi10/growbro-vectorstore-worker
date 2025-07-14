@@ -170,7 +170,7 @@ def upload_faiss_index_to_supabase(ai_id, supabase_url, bucket, supabase_key, lo
 
 
 
-def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=20, return_analytics=False, session_cookie=None):
+def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=20, return_analytics=False, session_cookie=None, deep_crawl=False):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
     Returns: list of LangChain Document objects
@@ -179,7 +179,8 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
     api_key = firecrawl_api_key or os.environ.get("FIRECRAWL_API_KEY")
     all_documents = []
     urls_crawled = []
-    for url in urls:
+    if deep_crawl and len(urls) > 0:
+        url = urls[0]
         try:
             # Ensure URL has scheme
             if not url.startswith("http://") and not url.startswith("https://"):
@@ -195,11 +196,11 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     "url": url,
                     "formats": formats,
                     "limit": limit
+                    # No maxDepth parameter for deep crawl
                 }
                 resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
                 resp.raise_for_status()
                 result = resp.json()
-                # Firecrawl REST API returns a list of pages in 'data'
                 for item in result.get('data', []):
                     content = item.get('markdown') or item.get('html') or ""
                     metadata = item.get('metadata', {})
@@ -211,8 +212,7 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 if FirecrawlApp is None or ScrapeOptions is None:
                     raise ImportError("Firecrawl SDK is not installed.")
                 app = FirecrawlApp(api_key=api_key)
-                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))
-                # If crawl is synchronous and completed, data is available immediately
+                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))  # No maxDepth for deep crawl
                 if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                     status = crawl_result
                 else:
@@ -231,9 +231,62 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     page_url = metadata.get('url') or url
                     urls_crawled.append(page_url)
         except Exception as e:
-            print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
-            # Fallback for this URL only
-            # Optionally could call generic_extract_website_text here and add to docs/analytics
+            print(f"[Firecrawl] Error deep crawling {url}: {e}. Please Contact Growbro")
+    elif not deep_crawl:
+        for url in urls:
+            try:
+                # Ensure URL has scheme
+                if not url.startswith("http://") and not url.startswith("https://"):
+                    url = "https://" + url
+                if session_cookie:
+                    # Use Firecrawl REST API with session cookie
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "Cookie": session_cookie
+                    }
+                    data = {
+                        "url": url,
+                        "formats": formats,
+                        "limit": limit,
+                        "maxDepth": 0  # Only crawl this page, do not follow links
+                    }
+                    resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                    resp.raise_for_status()
+                    result = resp.json()
+                    for item in result.get('data', []):
+                        content = item.get('markdown') or item.get('html') or ""
+                        metadata = item.get('metadata', {})
+                        all_documents.append(Document(page_content=content, metadata=metadata))
+                        page_url = metadata.get('url') or url
+                        urls_crawled.append(page_url)
+                else:
+                    # Use Firecrawl SDK for public crawling
+                    if FirecrawlApp is None or ScrapeOptions is None:
+                        raise ImportError("Firecrawl SDK is not installed.")
+                    app = FirecrawlApp(api_key=api_key)
+                    crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats), maxDepth=0)  # Only crawl this page
+                    if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
+                        status = crawl_result
+                    else:
+                        crawl_id = crawl_result.id
+                        while True:
+                            status = app.check_crawl_status(crawl_id)
+                            if status.status == 'completed':
+                                break
+                            elif status.status == 'failed':
+                                raise RuntimeError(f"Firecrawl crawl failed: {status}")
+                            time.sleep(3)
+                    for item in status.data:
+                        content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
+                        metadata = getattr(item, 'metadata', {})
+                        all_documents.append(Document(page_content=content, metadata=metadata))
+                        page_url = metadata.get('url') or url
+                        urls_crawled.append(page_url)
+            except Exception as e:
+                print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
+                # Fallback for this URL only
+                # Optionally could call generic_extract_website_text here and add to docs/analytics
     if return_analytics:
         # Remove duplicates and nulls
         urls_crawled = [u for u in set(urls_crawled) if u]

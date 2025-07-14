@@ -115,19 +115,36 @@ class DynamicRAGAgent:
         file_analytics = None
         file_urls = []
 
-        # 1. Website (mandatory)
-        website_urls = []
-        if self.config.get("website"):
-            if isinstance(self.config["website"], str):
-                website_urls = [u.strip() for u in self.config["website"].split(",") if u.strip()]
-            elif isinstance(self.config["website"], list):
-                website_urls = self.config["website"]
-        if website_urls:
-            print(f"[DynamicRAGAgent] Extracting website text for URLs: {website_urls}")
-            docs, website_analytics = extract_website_text_with_firecrawl(website_urls, return_analytics=True, session_cookie=self.session_cookie)
+        # 1. Website/URLs logic
+        # Try to use urls_crawled if present and non-empty, otherwise deep crawl from website(s)
+        urls_crawled = self.config.get("urls_crawled")
+        # Normalize: handle stringified JSON or array
+        import json
+        if isinstance(urls_crawled, str):
+            try:
+                urls_crawled = json.loads(urls_crawled)
+            except Exception:
+                urls_crawled = []
+        if urls_crawled and isinstance(urls_crawled, list) and len(urls_crawled) > 0:
+            print(f"[DynamicRAGAgent] Using ONLY specified urls_crawled (no deep crawl): {urls_crawled}")
+            # Shallow crawl: only fetch these pages, no link-following
+            docs, website_analytics = extract_website_text_with_firecrawl(urls_crawled, return_analytics=True, session_cookie=self.session_cookie, deep_crawl=False)
             documents += docs
         else:
-            print("[DynamicRAGAgent] No website URLs found in config (this should not happen).")
+            # Fallback: deep crawl from website(s) on first build
+            website_urls = []
+            if self.config.get("website"):
+                if isinstance(self.config["website"], str):
+                    website_urls = [u.strip() for u in self.config["website"].split(",") if u.strip()]
+                elif isinstance(self.config["website"], list):
+                    website_urls = self.config["website"]
+            if website_urls:
+                print(f"[DynamicRAGAgent] Deep crawling website(s): {website_urls}")
+                docs, website_analytics = extract_website_text_with_firecrawl(website_urls, return_analytics=True, session_cookie=self.session_cookie, deep_crawl=True)
+                documents += docs
+
+            else:
+                print("[DynamicRAGAgent] No website URLs found in config (this should not happen).")
 
         # 2. ai_links (optional)
         try:
@@ -135,7 +152,8 @@ class DynamicRAGAgent:
             link_urls = [row["url"] for row in (ai_links_res.data or []) if row.get("url")]
             if link_urls:
                 print(f"[DynamicRAGAgent] Extracting text for ai_links URLs: {link_urls}")
-                docs, link_analytics = extract_website_text_with_firecrawl(link_urls, return_analytics=True, session_cookie=self.session_cookie)
+                # Always shallow crawl for ai_links (single page per link)
+                docs, link_analytics = extract_website_text_with_firecrawl(link_urls, return_analytics=True, session_cookie=self.session_cookie, deep_crawl=False)
                 documents += docs
             else:
                 print("[DynamicRAGAgent] No ai_links URLs found for this user.")
