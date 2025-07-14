@@ -249,7 +249,7 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         "url": url,
                         "formats": formats,
                         "limit": limit,
-                        "maxDepth": 0  # Only crawl this page, do not follow links
+
                     }
                     resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
                     resp.raise_for_status()
@@ -265,7 +265,7 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     if FirecrawlApp is None or ScrapeOptions is None:
                         raise ImportError("Firecrawl SDK is not installed.")
                     app = FirecrawlApp(api_key=api_key)
-                    crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats), maxDepth=0)  # Only crawl this page
+                    crawl_result = app.crawl_url(url, limit=1, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
                     if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                         status = crawl_result
                     else:
