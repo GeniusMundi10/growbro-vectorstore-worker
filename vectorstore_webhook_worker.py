@@ -71,7 +71,7 @@ def remove_urls():
     # Download latest vectorstore if not present locally
     if (not os.path.exists(faiss_index_file)) and SUPABASE_URL and SUPABASE_KEY:
         try:
-            download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, local_dir=vectorstore_path)
+            download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, local_dir=".")
         except Exception as e:
             print(f"[remove_urls] Warning: Could not download FAISS index from Supabase: {e}")
     deleted_count = 0
@@ -88,13 +88,13 @@ def remove_urls():
         except Exception as e:
             print(f"[remove_urls] Warning: Could not upload FAISS index to Supabase: {e}")
 
-    # 4. Update DB (only after upload is done)
-    supabase.table("business_info").update({
-        "urls_crawled": new_urls
-    }).eq("id", ai_id).execute()
-    print(f"[remove_urls] Updated urls_crawled in DB for {ai_id} after FAISS upload.")
+        # 4. Update DB (only after upload is done)
+        supabase.table("business_info").update({
+            "urls_crawled": new_urls
+        }).eq("id", ai_id).execute()
+        print(f"[remove_urls] Updated urls_crawled in DB for {ai_id} after FAISS upload.")
 
-    return jsonify({"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}), 200
+        return jsonify({"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}), 200
 
 
 if __name__ == "__main__":
