@@ -67,10 +67,11 @@ def remove_urls():
     SUPABASE_BUCKET = "vectorstores"
     vectorstore_path = f"faiss_index_{ai_id}"
     faiss_index_file = os.path.join(vectorstore_path, "index.faiss")
+    print(f"[remove_urls] Looking for FAISS index at: {faiss_index_file}")
     # Download latest vectorstore if not present locally
     if (not os.path.exists(faiss_index_file)) and SUPABASE_URL and SUPABASE_KEY:
         try:
-            download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET)
+            download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, local_dir=vectorstore_path)
         except Exception as e:
             print(f"[remove_urls] Warning: Could not download FAISS index from Supabase: {e}")
     deleted_count = 0
@@ -79,8 +80,10 @@ def remove_urls():
         vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
         deleted_count = delete_vectors_by_url(vectorstore, urls_to_remove)
         vectorstore.save_local(vectorstore_path)
+        print(f"[remove_urls] Saved updated FAISS index to: {vectorstore_path}")
         # Upload updated vectorstore to Supabase Storage
         try:
+            print(f"[remove_urls] Uploading FAISS index from directory: {vectorstore_path}")
             upload_faiss_index_to_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=vectorstore_path)
         except Exception as e:
             print(f"[remove_urls] Warning: Could not upload FAISS index to Supabase: {e}")
