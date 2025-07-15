@@ -96,6 +96,25 @@ def aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
 # --- FAISS index upload/download utilities for Supabase Storage ---
 import requests
 
+def delete_vectors_by_url(vectorstore, urls_to_remove):
+    """
+    Deletes vectors from the FAISS vectorstore whose metadata 'source' matches any of the given URLs.
+    Returns the number of vectors deleted.
+    """
+    # Get mapping of vector IDs to metadata
+    if not hasattr(vectorstore, "docstore") or not hasattr(vectorstore.docstore, "_dict"):
+        raise ValueError("Vectorstore does not have expected docstore structure.")
+    id_to_doc = vectorstore.docstore._dict
+    # Find IDs to delete
+    ids_to_delete = [
+        doc_id
+        for doc_id, doc in id_to_doc.items()
+        if hasattr(doc, "metadata") and doc.metadata.get("source") in urls_to_remove
+    ]
+    if ids_to_delete:
+        vectorstore.delete(ids=ids_to_delete)
+    return len(ids_to_delete)
+
 def get_vectorstore_version_from_supabase(ai_id, supabase_url, bucket):
     """Fetches version.txt from Supabase Storage for the given ai_id and returns its contents as the version string."""
     version_url = f"{supabase_url}/storage/v1/object/public/{bucket}/faiss_index_{ai_id}/version.txt"

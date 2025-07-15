@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from rag_dynamic import DynamicRAGAgent
 from supabase_client import supabase
+from rag_utils import delete_vectors_by_url
 import traceback
 
 app = Flask(__name__)
