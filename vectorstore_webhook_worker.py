@@ -6,6 +6,10 @@ import traceback
 
 app = Flask(__name__)
 
+# Enable CORS for the CRM frontend
+from flask_cors import CORS
+CORS(app, origins=["https://crm.growbro.ai"])
+
 @app.route("/trigger", methods=["POST"])
 def trigger_vectorstore():
     data = request.json
