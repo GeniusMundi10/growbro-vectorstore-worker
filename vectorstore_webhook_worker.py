@@ -88,10 +88,11 @@ def remove_urls():
         except Exception as e:
             print(f"[remove_urls] Warning: Could not upload FAISS index to Supabase: {e}")
 
-    # 4. Update DB
+    # 4. Update DB (only after upload is done)
     supabase.table("business_info").update({
         "urls_crawled": new_urls
     }).eq("id", ai_id).execute()
+    print(f"[remove_urls] Updated urls_crawled in DB for {ai_id} after FAISS upload.")
 
     return jsonify({"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}), 200
 
