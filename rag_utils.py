@@ -249,7 +249,6 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         "url": url,
                         "formats": formats,
                         "limit": limit,
-
                     }
                     resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
                     resp.raise_for_status()
