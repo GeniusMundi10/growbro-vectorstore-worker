@@ -199,7 +199,7 @@ def upload_faiss_index_to_supabase(ai_id, supabase_url, bucket, supabase_key, lo
 
 
 
-def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=20, return_analytics=False, session_cookie=None, deep_crawl=False):
+def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=30, return_analytics=False, session_cookie=None, deep_crawl=False):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
     Returns: list of LangChain Document objects
@@ -300,7 +300,7 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     if FirecrawlApp is None or ScrapeOptions is None:
                         raise ImportError("Firecrawl SDK is not installed.")
                     app = FirecrawlApp(api_key=api_key)
-                    crawl_result = app.crawl_url(url, limit=1, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
+                    crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
                     if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                         status = crawl_result
                     else:
