@@ -214,7 +214,10 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
             # Ensure URL has scheme
             if not url.startswith("http://") and not url.startswith("https://"):
                 url = "https://" + url
+            print(f"[Firecrawl Debug] session_cookie: {session_cookie}")
+            print(f"[Firecrawl Debug] Deep crawl target url: {url}")
             if session_cookie:
+                print("[Firecrawl Debug] Path: REST API /v1/crawl with session_cookie")
                 # Use Firecrawl REST API with session cookie
                 headers = {
                     "Authorization": f"Bearer {api_key}",
@@ -245,11 +248,12 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     page_url = metadata.get('url') or url
                     urls_crawled.append(page_url)
             else:
+                print("[Firecrawl Debug] Path: SDK app.crawl_url (no session_cookie)")
                 # Use Firecrawl SDK for public crawling
                 if FirecrawlApp is None or ScrapeOptions is None:
                     raise ImportError("Firecrawl SDK is not installed.")
                 app = FirecrawlApp(api_key=api_key)
-                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))  # No maxDepth for deep crawl
+                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))  
                 if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                     status = crawl_result
                 else:
