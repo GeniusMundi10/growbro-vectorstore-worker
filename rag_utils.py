@@ -253,18 +253,21 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 if FirecrawlApp is None or ScrapeOptions is None:
                     raise ImportError("Firecrawl SDK is not installed.")
                 app = FirecrawlApp(api_key=api_key)
-                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))  
+                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))
+                print(f"[Firecrawl Debug] Full crawl_result: {crawl_result}")
                 if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                     status = crawl_result
                 else:
                     crawl_id = crawl_result.id
                     while True:
                         status = app.check_crawl_status(crawl_id)
+                        print(f"[Firecrawl Debug] Polling crawl status: {status}")
                         if status.status == 'completed':
                             break
                         elif status.status == 'failed':
                             raise RuntimeError(f"Firecrawl crawl failed: {status}")
                         time.sleep(3)
+                print(f"[Firecrawl Debug] Final crawl status: {status}")
                 for item in status.data:
                     content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
                     metadata = getattr(item, 'metadata', {})
