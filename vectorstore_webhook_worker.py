@@ -84,7 +84,7 @@ def remove_urls():
         # Upload updated vectorstore to Supabase Storage
         try:
             print(f"[remove_urls] Uploading FAISS index from directory: {vectorstore_path}")
-            upload_faiss_index_to_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=vectorstore_path)
+            upload_faiss_index_to_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
         except Exception as e:
             print(f"[remove_urls] Warning: Could not upload FAISS index to Supabase: {e}")
 
