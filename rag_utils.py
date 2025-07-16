@@ -233,6 +233,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 for item in result.get('data', []):
                     content = item.get('markdown') or item.get('html') or ""
                     metadata = item.get('metadata', {})
+                    # Ensure 'source' is always set for vector deletion
+                    if 'source' not in metadata:
+                        metadata['source'] = metadata.get('sourceURL') or metadata.get('url') or url
                     all_documents.append(Document(page_content=content, metadata=metadata))
                     page_url = metadata.get('url') or url
                     urls_crawled.append(page_url)
