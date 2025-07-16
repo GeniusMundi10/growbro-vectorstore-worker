@@ -227,7 +227,8 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     "limit": limit
                     # No maxDepth parameter for deep crawl
                 }
-                resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                print("[Firecrawl Debug] Using /v1/crawl endpoint for deep crawl")
+                resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
                 resp.raise_for_status()
                 result = resp.json()
                 for item in result.get('data', []):
