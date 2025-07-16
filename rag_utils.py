@@ -107,6 +107,9 @@ def delete_vectors_by_url(vectorstore, urls_to_remove):
     id_to_doc = vectorstore.docstore._dict
     print(f"[delete_vectors_by_url] Vectorstore has {len(id_to_doc)} docs before deletion.")
     print(f"[delete_vectors_by_url] URLs requested for removal: {urls_to_remove}")
+    # Print all sources in the vectorstore for debug
+    all_sources = [doc.metadata.get("source") for doc in id_to_doc.values() if hasattr(doc, "metadata")]
+    print(f"[delete_vectors_by_url] All sources in vectorstore: {all_sources}")
     # Find IDs to delete
     ids_to_delete = []
     for doc_id, doc in id_to_doc.items():
