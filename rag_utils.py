@@ -105,15 +105,22 @@ def delete_vectors_by_url(vectorstore, urls_to_remove):
     if not hasattr(vectorstore, "docstore") or not hasattr(vectorstore.docstore, "_dict"):
         raise ValueError("Vectorstore does not have expected docstore structure.")
     id_to_doc = vectorstore.docstore._dict
+    print(f"[delete_vectors_by_url] Vectorstore has {len(id_to_doc)} docs before deletion.")
+    print(f"[delete_vectors_by_url] URLs requested for removal: {urls_to_remove}")
     # Find IDs to delete
-    ids_to_delete = [
-        doc_id
-        for doc_id, doc in id_to_doc.items()
-        if hasattr(doc, "metadata") and doc.metadata.get("source") in urls_to_remove
-    ]
+    ids_to_delete = []
+    for doc_id, doc in id_to_doc.items():
+        source = doc.metadata.get("source") if hasattr(doc, "metadata") else None
+        if source in urls_to_remove:
+            print(f"[delete_vectors_by_url] Will delete doc_id={doc_id} with source={source}")
+            ids_to_delete.append(doc_id)
     if ids_to_delete:
         vectorstore.delete(ids=ids_to_delete)
+        print(f"[delete_vectors_by_url] Deleted {len(ids_to_delete)} vectors.")
+    else:
+        print("[delete_vectors_by_url] No vectors matched for deletion.")
     return len(ids_to_delete)
+
 
 def get_vectorstore_version_from_supabase(ai_id, supabase_url, bucket):
     """Fetches version.txt from Supabase Storage for the given ai_id and returns its contents as the version string."""

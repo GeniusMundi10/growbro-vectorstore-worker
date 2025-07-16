@@ -51,6 +51,7 @@ def remove_urls():
     if not res.data or not isinstance(res.data, list):
         return jsonify({"status": "error", "message": "AI not found"}), 404
     current_urls = res.data[0].get("urls_crawled", [])
+    print(f"[remove_urls] Current urls_crawled from DB: {current_urls}")
     if isinstance(current_urls, str):
         import json
         current_urls = json.loads(current_urls)
@@ -59,6 +60,7 @@ def remove_urls():
 
     # 2. Compute new_urls
     new_urls = [u for u in current_urls if u not in urls_to_remove]
+    print(f"[remove_urls] new_urls after removal: {new_urls}")
 
     # 3. Delete vectors (always download latest from Supabase Storage first)
     import os
@@ -79,8 +81,14 @@ def remove_urls():
         embeddings = get_embeddings()
         vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
         deleted_count = delete_vectors_by_url(vectorstore, urls_to_remove)
+        print(f"[remove_urls] delete_vectors_by_url returned: {deleted_count}")
         vectorstore.save_local(vectorstore_path)
         print(f"[remove_urls] Saved updated FAISS index to: {vectorstore_path}")
+        # Print existence of all FAISS files before upload
+        import os
+        for fname in ["index.faiss", "index.pkl", "splits.pkl"]:
+            fpath = os.path.join(vectorstore_path, fname)
+            print(f"[remove_urls] File {fpath} exists? {os.path.exists(fpath)}")
         # Upload updated vectorstore to Supabase Storage
         try:
             print(f"[remove_urls] Uploading FAISS index from directory: {vectorstore_path}")
@@ -94,7 +102,9 @@ def remove_urls():
         }).eq("id", ai_id).execute()
         print(f"[remove_urls] Updated urls_crawled in DB for {ai_id} after FAISS upload.")
 
-        return jsonify({"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}), 200
+        response = {"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}
+        print(f"[remove_urls] Returning response: {response}")
+        return jsonify(response), 200
 
 
 if __name__ == "__main__":
