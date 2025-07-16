@@ -233,9 +233,13 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 for item in result.get('data', []):
                     content = item.get('markdown') or item.get('html') or ""
                     metadata = item.get('metadata', {})
+                    print(f"[Firecrawl Debug] Raw metadata from API: {metadata}")
                     # Ensure 'source' is always set for vector deletion
                     if 'source' not in metadata:
-                        metadata['source'] = metadata.get('sourceURL') or metadata.get('url') or url
+                        computed_source = metadata.get('sourceURL') or metadata.get('url') or url
+                        print(f"[Firecrawl Debug] Computed 'source' for Document: {computed_source}")
+                        metadata['source'] = computed_source
+                    print(f"[Firecrawl Debug] Final metadata for Document: {metadata}")
                     all_documents.append(Document(page_content=content, metadata=metadata))
                     page_url = metadata.get('url') or url
                     urls_crawled.append(page_url)
