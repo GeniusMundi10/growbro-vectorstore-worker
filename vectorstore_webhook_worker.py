@@ -1,8 +1,20 @@
 from flask import Flask, request, jsonify
 from rag_dynamic import DynamicRAGAgent
 from supabase_client import supabase
-from rag_utils import delete_vectors_by_url
+from rag_utils import (
+    delete_vectors_by_url,
+    get_embeddings,
+    get_text_splitter,
+    download_faiss_index_from_supabase,
+    upload_faiss_index_to_supabase,
+    append_to_vectorstore,
+    extract_website_text_with_firecrawl
+)
+from langchain.vectorstores import FAISS
 import traceback
+import os
+import uuid
+from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
 
 app = Flask(__name__)
 
@@ -37,6 +49,126 @@ def trigger_vectorstore():
         print("[ERROR]", e)
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/add-links', methods=['POST'])
+def add_links():
+    # Get the ai_id and new URLs from the request
+    data = request.get_json()
+    ai_id = data.get('ai_id')
+    new_urls = data.get('new_urls', [])
+    
+    if not ai_id or not new_urls:
+        return jsonify({
+            'status': 'error', 
+            'message': 'Missing required parameters: ai_id and/or new_urls'
+        }), 400
+    
+    print(f"[add_links] Adding {len(new_urls)} new URLs for {ai_id}")
+    
+    # Get business info from Supabase to get existing URLs
+    try:
+        print(f"[add_links] Fetching business info for {ai_id}")
+        res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+        business_info = res.data
+        if not business_info:
+            print(f"[add_links] No business info found for {ai_id}")
+            return jsonify({'status': 'error', 'message': 'Business info not found'}), 404
+            
+        # Get current crawled URLs
+        existing_urls = business_info.get("urls_crawled", [])        
+        # Check if any of the new URLs are already in the vectorstore
+        already_crawled = set(existing_urls).intersection(set(new_urls))
+        new_urls_to_crawl = [url for url in new_urls if url not in already_crawled]
+        
+        if not new_urls_to_crawl:
+            print(f"[add_links] All URLs already in vectorstore, nothing to add")
+            return jsonify({
+                'status': 'success', 
+                'added_count': 0,
+                'urls_crawled': existing_urls
+            })
+        
+        # Download existing vectorstore
+        print(f"[add_links] Downloading existing vectorstore for {ai_id}")
+        try:
+            # Set up embeddings and text splitter
+            embeddings = get_embeddings()
+            text_splitter = get_text_splitter()
+            
+            # Download the existing vectorstore
+            local_index_dir = download_faiss_index_from_supabase(
+                ai_id,
+                supabase_url=SUPABASE_URL,
+                bucket=SUPABASE_STORAGE_BUCKET
+            )
+            vectorstore = FAISS.load_local(local_index_dir, embeddings, allow_dangerous_deserialization=True)
+            print(f"[add_links] Successfully loaded existing FAISS index with {len(vectorstore.docstore._dict)} vectors")
+            
+            # Crawl only the new URLs - no deep crawl, just the specific new URLs
+            print(f"[add_links] Crawling {len(new_urls_to_crawl)} new URLs for {ai_id}")
+            new_docs, analytics = extract_website_text_with_firecrawl(
+                new_urls_to_crawl,
+                return_analytics=True, 
+                deep_crawl=False  # No deep crawl, just the specific URLs
+            )
+            
+            # Use the actual crawled URLs from analytics, not the requested URLs
+            actually_crawled_urls = analytics["urls_crawled"]
+            print(f"[add_links] Successfully crawled {len(actually_crawled_urls)} URLs: {actually_crawled_urls}")
+            
+            if not new_docs:
+                print(f"[add_links] No documents extracted from new URLs")
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Failed to extract content from new URLs'
+                }), 400
+            
+            # Append new documents to the existing vectorstore
+            print(f"[add_links] Appending {len(new_docs)} new documents to vectorstore")
+            updated_vectorstore = append_to_vectorstore(vectorstore, new_docs, embeddings, text_splitter)
+            
+            # Save the updated vectorstore
+            output_dir = f"faiss_index_{ai_id}"
+            os.makedirs(output_dir, exist_ok=True)
+            updated_vectorstore.save_local(output_dir)
+            print(f"[add_links] Saved updated FAISS index to: {output_dir}")
+            
+            # Upload the updated index to Supabase
+            print(f"[add_links] Uploading updated vectorstore to Supabase")
+            upload_faiss_index_to_supabase(
+                ai_id,
+                local_dir=output_dir,
+                supabase_url=SUPABASE_URL,
+                bucket=SUPABASE_STORAGE_BUCKET,
+                version_tag=str(uuid.uuid4())[:8]  # Generate a version tag
+            )
+            
+            # Update business_info with new urls_crawled list and total_pages_crawled
+            # Use the actually crawled URLs from analytics, not just the requested ones
+            print(f"[add_links] Updating urls_crawled and total_pages_crawled in DB for {ai_id}")
+            new_urls_list = list(set(existing_urls + actually_crawled_urls))  # Remove duplicates, use actually crawled URLs
+            res = supabase.table("business_info").update({
+                "urls_crawled": new_urls_list,
+                "total_pages_crawled": len(new_urls_list)  # Keep total_pages_crawled in sync
+            }).eq("id", ai_id).execute()
+            
+            return jsonify({
+                'status': 'success',
+                'added_count': len(new_docs),
+                'urls_crawled': new_urls_list,
+                'actually_crawled': actually_crawled_urls,
+                'pages_crawled': analytics['pages_crawled']
+            })
+            
+        except Exception as e:
+            print(f"[add_links] Error processing vectorstore: {str(e)}")
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+            
+    except Exception as e:
+        print(f"[add_links] Error: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route("/remove-urls", methods=["POST"])
 def remove_urls():
@@ -98,9 +230,10 @@ def remove_urls():
 
         # 4. Update DB (only after upload is done)
         supabase.table("business_info").update({
-            "urls_crawled": new_urls
+            "urls_crawled": new_urls,
+            "total_pages_crawled": len(new_urls)  # Keep total_pages_crawled in sync with urls_crawled
         }).eq("id", ai_id).execute()
-        print(f"[remove_urls] Updated urls_crawled in DB for {ai_id} after FAISS upload.")
+        print(f"[remove_urls] Updated urls_crawled and total_pages_crawled in DB for {ai_id} after FAISS upload.")
 
         response = {"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}
         print(f"[remove_urls] Returning response: {response}")

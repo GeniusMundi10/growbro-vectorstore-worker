@@ -125,6 +125,39 @@ def delete_vectors_by_url(vectorstore, urls_to_remove):
     return len(ids_to_delete)
 
 
+def append_to_vectorstore(vectorstore, new_documents, embeddings, text_splitter):
+    """
+    Append new documents to an existing FAISS vectorstore without rebuilding from scratch.
+    Performs document splitting and embeddings generation for the new documents only.
+    
+    Args:
+        vectorstore: Existing FAISS vectorstore to append to
+        new_documents: List of new Document objects to append
+        embeddings: Embeddings model to use
+        text_splitter: Text splitter to use for document splitting
+        
+    Returns:
+        Updated vectorstore with new documents added
+    """
+    if not new_documents:
+        print("[append_to_vectorstore] No new documents to append.")
+        return vectorstore
+        
+    print(f"[append_to_vectorstore] Appending {len(new_documents)} new documents to existing vectorstore")
+    
+    # Split the new documents
+    print("[append_to_vectorstore] Splitting new documents...")
+    splits = text_splitter.split_documents(new_documents)
+    print(f"[append_to_vectorstore] Generated {len(splits)} splits from {len(new_documents)} documents")
+    
+    # Add the new splits to the existing vectorstore
+    print("[append_to_vectorstore] Adding new splits to vectorstore...")
+    vectorstore.add_documents(splits)
+    print(f"[append_to_vectorstore] Vectorstore now has {len(vectorstore.docstore._dict)} total vectors")
+    
+    return vectorstore
+
+
 def get_vectorstore_version_from_supabase(ai_id, supabase_url, bucket):
     """Fetches version.txt from Supabase Storage for the given ai_id and returns its contents as the version string."""
     version_url = f"{supabase_url}/storage/v1/object/public/{bucket}/faiss_index_{ai_id}/version.txt"
