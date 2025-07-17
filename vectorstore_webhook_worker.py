@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from rag_dynamic import DynamicRAGAgent
-from supabase_client import supabase
+# Import supabase client and credentials from the centralized module
+from supabase_client import supabase, SUPABASE_URL, SUPABASE_KEY
 from rag_utils import (
     delete_vectors_by_url,
     get_embeddings,
@@ -10,11 +11,14 @@ from rag_utils import (
     append_to_vectorstore,
     extract_website_text_with_firecrawl
 )
+# LangChain deprecation warning: Use from langchain_community.vectorstores instead
 from langchain.vectorstores import FAISS
 import traceback
 import os
 import uuid
-from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
+
+# Storage bucket name for vectorstores
+SUPABASE_STORAGE_BUCKET = "vectorstores"
 
 app = Flask(__name__)
 
@@ -94,7 +98,7 @@ def add_links():
             # Set up embeddings and text splitter
             embeddings = get_embeddings()
             text_splitter = get_text_splitter()
-            
+
             # Download the existing vectorstore
             local_index_dir = download_faiss_index_from_supabase(
                 ai_id,
