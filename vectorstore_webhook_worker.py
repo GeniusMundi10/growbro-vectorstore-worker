@@ -131,10 +131,18 @@ def add_links():
             print(f"[add_links] Appending {len(new_docs)} new documents to vectorstore")
             updated_vectorstore = append_to_vectorstore(vectorstore, new_docs, embeddings, text_splitter)
             
-            # Save the updated vectorstore
+            # Save the vectorstore directly to the output directory
             output_dir = f"faiss_index_{ai_id}"
             os.makedirs(output_dir, exist_ok=True)
             updated_vectorstore.save_local(output_dir)
+            
+            # Create version.txt file
+            import datetime
+            version_txt_path = os.path.join(output_dir, "version.txt")
+            version = datetime.datetime.utcnow().isoformat()
+            with open(version_txt_path, "w") as f:
+                f.write(version)
+                
             print(f"[add_links] Saved updated FAISS index to: {output_dir}")
             
             # Upload the updated index to Supabase
