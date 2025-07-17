@@ -141,10 +141,10 @@ def add_links():
             print(f"[add_links] Uploading updated vectorstore to Supabase")
             upload_faiss_index_to_supabase(
                 ai_id,
-                local_dir=output_dir,
                 supabase_url=SUPABASE_URL,
                 bucket=SUPABASE_STORAGE_BUCKET,
-                version_tag=str(uuid.uuid4())[:8]  # Generate a version tag
+                supabase_key=SUPABASE_KEY,
+                local_dir=output_dir
             )
             
             # Update business_info with new urls_crawled list and total_pages_crawled
