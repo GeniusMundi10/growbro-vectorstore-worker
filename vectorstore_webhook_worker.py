@@ -152,7 +152,7 @@ def add_links():
                 supabase_url=SUPABASE_URL,
                 bucket=SUPABASE_STORAGE_BUCKET,
                 supabase_key=SUPABASE_KEY,
-                local_dir=output_dir
+                local_dir="."  # Use current directory as base, not the faiss_index dir itself
             )
             
             # Update business_info with new urls_crawled list and total_pages_crawled
