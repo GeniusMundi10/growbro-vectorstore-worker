@@ -205,8 +205,8 @@ def add_files():
                 business_info = business_info_res.data
                 
                 if business_info:
-                    # Get current count or default to 0
-                    current_files_indexed = business_info.get("files_indexed", 0)
+                    # Get current count or default to 0 if None
+                    current_files_indexed = business_info.get("files_indexed") or 0
                     
                     # Calculate new count (add newly processed files)
                     new_files_indexed = current_files_indexed + file_stats["successfully_processed"]
