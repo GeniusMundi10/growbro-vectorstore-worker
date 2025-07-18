@@ -442,6 +442,11 @@ def remove_files():
     try:
         print(f"[remove_files] Removing {len(file_urls)} files from vectorstore for AI {ai_id}")
         
+        # Import required functions
+        import os
+        from rag_utils import get_embeddings, load_faiss_vectorstore, delete_vectors_by_url, download_faiss_index_from_supabase, upload_faiss_index_to_supabase
+        from supabase_client import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_BUCKET
+        
         # 1. Download the existing vectorstore from Supabase
         print(f"[remove_files] Downloading vectorstore from Supabase")
         vectorstore_path = f"faiss_index_{ai_id}"
@@ -467,7 +472,7 @@ def remove_files():
         print(f"[remove_files] Loading vectorstore from {vectorstore_path}")
         try:
             embeddings = get_embeddings()
-            vectorstore = FAISS.load_local(vectorstore_path, embeddings)
+            vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
             print(f"[remove_files] Successfully loaded vectorstore")
         except Exception as e:
             print(f"[remove_files] Error loading vectorstore: {e}")
