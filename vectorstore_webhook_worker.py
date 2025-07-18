@@ -8,6 +8,7 @@ from langchain.docstore.document import Document
 from rag_utils import (
     delete_vectors_by_url,
     get_embeddings,
+    load_faiss_vectorstore,
     get_text_splitter,
     download_faiss_index_from_supabase,
     upload_faiss_index_to_supabase,
@@ -441,11 +442,6 @@ def remove_files():
 
     try:
         print(f"[remove_files] Removing {len(file_urls)} files from vectorstore for AI {ai_id}")
-        
-        # Import required functions
-        import os
-        from rag_utils import get_embeddings, load_faiss_vectorstore, delete_vectors_by_url, download_faiss_index_from_supabase, upload_faiss_index_to_supabase
-        from supabase_client import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_BUCKET
         
         # 1. Download the existing vectorstore from Supabase
         print(f"[remove_files] Downloading vectorstore from Supabase")
