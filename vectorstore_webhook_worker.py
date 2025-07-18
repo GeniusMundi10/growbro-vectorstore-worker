@@ -73,6 +73,9 @@ def add_files():
     Returns:
     - Success status and analytics about processed files
     """
+    # Import os at function scope to avoid UnboundLocalError
+    import os
+    
     try:
         data = request.json
         ai_id = data.get("ai_id")
