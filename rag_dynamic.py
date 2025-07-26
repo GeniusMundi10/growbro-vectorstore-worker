@@ -79,7 +79,7 @@ class DynamicRAGAgent:
         # Check if Pinecone index exists for this AI
         if check_index_exists(self.ai_id):
             print(f"[DynamicRAGAgent] Pinecone serverless index found for AI {self.ai_id}")
-            self.vectorstore = PineconeServerlessRetriever(self.ai_id)
+            self.vectorstore = PineconeServerlessRetriever(ai_id=self.ai_id)
         else:
             print(f"[DynamicRAGAgent] No Pinecone index found for AI {self.ai_id}. Will create on first build.")
             self.vectorstore = None
@@ -110,7 +110,7 @@ class DynamicRAGAgent:
         # Check if Pinecone index already exists and we don't need to rebuild
         if check_index_exists(self.ai_id) and not force_rebuild:
             print(f"[DynamicRAGAgent] Pinecone index already exists for AI {self.ai_id}. Loading...")
-            self.vectorstore = PineconeServerlessRetriever(self.ai_id)
+            self.vectorstore = PineconeServerlessRetriever(ai_id=self.ai_id)
             self.retriever = self._setup_retriever()
             self.chain = self._build_chain()
             print("[DynamicRAGAgent] Pinecone vectorstore loaded.")
@@ -214,7 +214,7 @@ class DynamicRAGAgent:
         save_splits_to_supabase(self.ai_id, splits)
         
         # Create retriever
-        self.vectorstore = PineconeServerlessRetriever(self.ai_id)
+        self.vectorstore = PineconeServerlessRetriever(ai_id=self.ai_id)
         self.retriever = self._setup_retriever()
         self.chain = self._build_chain()
         

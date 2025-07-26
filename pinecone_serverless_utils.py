@@ -319,16 +319,13 @@ def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
 
 
 from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
 
 class PineconeServerlessRetriever(BaseRetriever):
-    """Custom retriever that uses Pinecone serverless embeddings and is compatible with LangChain."""
-    
-    def __init__(self, ai_id: str, top_k: int = 5):
-        self.ai_id = ai_id
-        self.top_k = top_k
-    
+    ai_id: str = Field()
+    top_k: int = Field(default=5)
+
     def get_relevant_documents(self, query: str) -> list:
-        """Retrieve relevant documents for a query (LangChain interface)."""
         results = query_pinecone_with_lightweight_embeddings(self.ai_id, query, self.top_k)
         documents = []
         for result in results:
@@ -342,7 +339,7 @@ class PineconeServerlessRetriever(BaseRetriever):
             )
             documents.append(doc)
         return documents
-    
+
     # Retain invoke for backward compatibility if needed
     def invoke(self, query: str) -> list:
         return self.get_relevant_documents(query)
