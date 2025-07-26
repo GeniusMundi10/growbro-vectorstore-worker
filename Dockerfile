@@ -20,6 +20,7 @@ COPY vectorstore_webhook_worker.py .
 COPY rag_dynamic.py .
 COPY rag_utils.py .
 COPY supabase_client.py .
+COPY pinecone_serverless_utils.py .
 
 # Expose the port your Flask app runs on
 EXPOSE 8001
