@@ -318,18 +318,18 @@ def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
         return 0
 
 
-class PineconeServerlessRetriever:
-    """Custom retriever that uses Pinecone serverless embeddings."""
+from langchain.retrievers import BaseRetriever
+
+class PineconeServerlessRetriever(BaseRetriever):
+    """Custom retriever that uses Pinecone serverless embeddings and is compatible with LangChain."""
     
     def __init__(self, ai_id: str, top_k: int = 5):
         self.ai_id = ai_id
         self.top_k = top_k
     
-    def invoke(self, query: str) -> List[Document]:
-        """Retrieve relevant documents for a query."""
+    def get_relevant_documents(self, query: str) -> list:
+        """Retrieve relevant documents for a query (LangChain interface)."""
         results = query_pinecone_with_lightweight_embeddings(self.ai_id, query, self.top_k)
-        
-        # Convert to LangChain Document format
         documents = []
         for result in results:
             doc = Document(
@@ -341,5 +341,9 @@ class PineconeServerlessRetriever:
                 }
             )
             documents.append(doc)
-        
         return documents
+    
+    # Retain invoke for backward compatibility if needed
+    def invoke(self, query: str) -> list:
+        return self.get_relevant_documents(query)
+

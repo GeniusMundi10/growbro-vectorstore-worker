@@ -45,7 +45,7 @@ def save_splits_to_supabase(ai_id: str, splits):
         # Upload new file
         response = supabase.storage.from_("vectorstores").upload(
             file_path, 
-            file_obj,
+            file_obj.getvalue(),  # Pass bytes, not BytesIO
             file_options={"content-type": "application/octet-stream"}
         )
         
