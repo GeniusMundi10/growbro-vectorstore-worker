@@ -6,19 +6,19 @@ import tempfile
 import requests
 from langchain.docstore.document import Document
 from rag_utils import (
-    delete_vectors_by_url,
-    get_embeddings,
-    load_faiss_vectorstore,
     get_text_splitter,
-    download_faiss_index_from_supabase,
-    upload_faiss_index_to_supabase,
-    append_to_vectorstore,
     extract_website_text_with_firecrawl,
-    generic_create_vectorstore,
     extract_file_text
 )
-# LangChain deprecation warning: Use from langchain_community.vectorstores instead
-from langchain.vectorstores import FAISS
+from pinecone_serverless_utils import (
+    check_index_exists,
+    upsert_documents_with_lightweight_embeddings,
+    append_documents_to_pinecone,
+    delete_vectors_by_ai_id,
+    delete_vectors_by_source,
+    get_vectorstore_stats,
+    PineconeServerlessRetriever
+)
 import traceback
 import os
 import uuid
@@ -114,123 +114,98 @@ def add_files():
         
         print(f"[add_files] Found {len(new_file_urls)} new files to process")
         
-        # Download FAISS index from Supabase if available
-        vectorstore_path = f"faiss_index_{ai_id}"
-        faiss_index_file = os.path.join(vectorstore_path, "index.faiss")
-        if (not os.path.exists(faiss_index_file)) and SUPABASE_URL and SUPABASE_KEY:
+        # Check if Pinecone index exists for this AI
+        if not check_index_exists(ai_id):
+            print(f"[add_files] No Pinecone index found for AI {ai_id}. Will be created automatically.")
+        else:
+            print(f"[add_files] Found existing Pinecone index for AI {ai_id}")
+            
+        # Process new files
+        new_docs = []
+        files_processed = []
+        
+        # Add skipped files to analytics
+        for url in file_urls:
+            if url in existing_files:
+                file_stats["file_status"][url] = "already_processed"
+        
+        # Process each new file
+        for file_url in new_file_urls:
             try:
-                download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_STORAGE_BUCKET, local_dir=".")
-                print(f"[add_files] Downloaded vectorstore from Supabase")
-            except Exception as e:
-                print(f"[add_files] Warning: Could not download FAISS index from Supabase: {e}")
-                return jsonify({"status": "error", "message": "Vectorstore not found and could not be downloaded"}), 404
+                resp = requests.get(file_url)
+                resp.raise_for_status()
+                # Extract file extension
+                suffix = os.path.splitext(file_url)[-1]
                 
-        try:
-            # Load existing vectorstore
-            embeddings = get_embeddings()
-            text_splitter = get_text_splitter()
-            vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
-            print(f"[add_files] Loaded existing vectorstore from {vectorstore_path}")
-            
-            # Process new files
-            new_docs = []
-            files_processed = []
-            
-            # Add skipped files to analytics
-            for url in file_urls:
-                if url in existing_files:
-                    file_stats["file_status"][url] = "already_processed"
-            
-            # Process files similar to extract_and_build_vectorstore
-            for file_url in new_file_urls:
-                try:
-                    resp = requests.get(file_url)
-                    resp.raise_for_status()
-                    # Extract file extension
-                    import os
-                    suffix = os.path.splitext(file_url)[-1]
-                    
-                    # Process with temp file
-                    with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp_file:
-                        tmp_file.write(resp.content)
-                        tmp_file.flush()
-                        text = extract_file_text(tmp_file.name)
-                        if text:
-                            new_docs.append(Document(page_content=text, metadata={"source": file_url}))
-                            files_processed.append(file_url)
-                            file_stats["file_status"][file_url] = "success"
-                            file_stats["successfully_processed"] += 1
-                            print(f"[add_files] Successfully extracted text from {file_url}")
-                        else:
-                            file_stats["file_status"][file_url] = "no_content_extracted"
-                            file_stats["failed"] += 1
-                            print(f"[add_files] No text extracted from file: {file_url}")
-                except Exception as e:
-                    file_stats["file_status"][file_url] = f"error: {str(e)}"
-                    file_stats["failed"] += 1
-                    print(f"[add_files] Error downloading or extracting file: {file_url}, error: {e}")
-            
-            # If no documents were extracted
-            if not new_docs:
-                print(f"[add_files] No content extracted from files")
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Failed to extract content from files',
-                    'analytics': file_stats
-                }), 400
-            
-            # Append new documents to the existing vectorstore
-            print(f"[add_files] Appending {len(new_docs)} new documents to vectorstore")
-            updated_vectorstore = append_to_vectorstore(vectorstore, new_docs, embeddings, text_splitter)
-            
-            # Save the vectorstore directly to the output directory
-            os.makedirs(vectorstore_path, exist_ok=True)
-            updated_vectorstore.save_local(vectorstore_path)
-            print(f"[add_files] Saved updated FAISS index to: {vectorstore_path}")
-            
-            # Upload the updated index to Supabase
-            print(f"[add_files] Uploading updated vectorstore to Supabase")
-            upload_faiss_index_to_supabase(
-                ai_id,
-                supabase_url=SUPABASE_URL,
-                bucket=SUPABASE_STORAGE_BUCKET,
-                supabase_key=SUPABASE_KEY,
-                local_dir="."  # Use current directory as base
-            )
-            
-            # Update files_indexed count in business_info
-            try:
-                # First get current business_info to preserve other analytics
-                business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
-                business_info = business_info_res.data
-                
-                if business_info:
-                    # Get current count or default to 0 if None
-                    current_files_indexed = business_info.get("files_indexed") or 0
-                    
-                    # Calculate new count (add newly processed files)
-                    new_files_indexed = current_files_indexed + file_stats["successfully_processed"]
-                    
-                    # Update business_info with new count
-                    print(f"[add_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
-                    supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
-                    
-                    # Update analytics for response
-                    file_stats["total_files_indexed"] = new_files_indexed
+                # Process with temp file
+                with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp_file:
+                    tmp_file.write(resp.content)
+                    tmp_file.flush()
+                    text = extract_file_text(tmp_file.name)
+                    if text:
+                        new_docs.append(Document(page_content=text, metadata={"source": file_url}))
+                        files_processed.append(file_url)
+                        file_stats["file_status"][file_url] = "success"
+                        file_stats["successfully_processed"] += 1
+                        print(f"[add_files] Successfully extracted text from {file_url}")
+                    else:
+                        file_stats["file_status"][file_url] = "no_content_extracted"
+                        file_stats["failed"] += 1
+                        print(f"[add_files] No text extracted from file: {file_url}")
             except Exception as e:
-                print(f"[add_files] Warning: Could not update files_indexed count: {e}")
-            
+                file_stats["file_status"][file_url] = f"error: {str(e)}"
+                file_stats["failed"] += 1
+                print(f"[add_files] Error downloading or extracting file: {file_url}, error: {e}")
+        
+        # If no documents were extracted
+        if not new_docs:
+            print(f"[add_files] No content extracted from files")
             return jsonify({
-                'status': 'success',
-                'added_count': len(new_docs),
-                'files_processed': files_processed,
+                'status': 'error', 
+                'message': 'Failed to extract content from files',
                 'analytics': file_stats
-            })
-            
+            }), 400
+        
+        # Add new documents to Pinecone index
+        print(f"[add_files] Adding {len(new_docs)} new documents to Pinecone index")
+        try:
+            append_documents_to_pinecone(ai_id, new_docs)
+            print(f"[add_files] Successfully added documents to Pinecone index")
         except Exception as e:
-            print(f"[add_files] Error processing vectorstore: {str(e)}")
-            traceback.print_exc()
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            print(f"[add_files] Error adding documents to Pinecone: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Error adding documents to Pinecone: {str(e)}'
+            }), 500
+        
+        # Update files_indexed count in business_info
+        try:
+            # First get current business_info to preserve other analytics
+            business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+            business_info = business_info_res.data
+            
+            if business_info:
+                # Get current count or default to 0 if None
+                current_files_indexed = business_info.get("files_indexed") or 0
+                
+                # Calculate new count (add newly processed files)
+                new_files_indexed = current_files_indexed + file_stats["successfully_processed"]
+                
+                # Update business_info with new count
+                print(f"[add_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
+                supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
+                
+                # Update analytics for response
+                file_stats["total_files_indexed"] = new_files_indexed
+        except Exception as e:
+            print(f"[add_files] Warning: Could not update files_indexed count: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'added_count': len(new_docs),
+            'files_processed': files_processed,
+            'analytics': file_stats
+        })
             
     except Exception as e:
         print(f"[add_files] Error: {str(e)}")
@@ -275,24 +250,14 @@ def add_links():
                 'urls_crawled': existing_urls
             })
         
-        # Download existing vectorstore
-        print(f"[add_links] Downloading existing vectorstore for {ai_id}")
+        # Check if Pinecone index exists for this AI
+        print(f"[add_links] Checking Pinecone index for {ai_id}")
+        if not check_index_exists(ai_id):
+            print(f"[add_links] No Pinecone index found for AI {ai_id}. Will be created automatically.")
+        
+        # Crawl the new URLs
+        print(f"[add_links] Crawling {len(new_urls_to_crawl)} new URLs for {ai_id}")
         try:
-            # Set up embeddings and text splitter
-            embeddings = get_embeddings()
-            text_splitter = get_text_splitter()
-
-            # Download the existing vectorstore
-            local_index_dir = download_faiss_index_from_supabase(
-                ai_id,
-                supabase_url=SUPABASE_URL,
-                bucket=SUPABASE_STORAGE_BUCKET
-            )
-            vectorstore = FAISS.load_local(local_index_dir, embeddings, allow_dangerous_deserialization=True)
-            print(f"[add_links] Successfully loaded existing FAISS index with {len(vectorstore.docstore._dict)} vectors")
-            
-            # Crawl only the new URLs - no deep crawl, just the specific new URLs
-            print(f"[add_links] Crawling {len(new_urls_to_crawl)} new URLs for {ai_id}")
             new_docs, analytics = extract_website_text_with_firecrawl(
                 new_urls_to_crawl,
                 return_analytics=True, 
@@ -310,41 +275,17 @@ def add_links():
                     'message': 'Failed to extract content from new URLs'
                 }), 400
             
-            # Append new documents to the existing vectorstore
-            print(f"[add_links] Appending {len(new_docs)} new documents to vectorstore")
-            updated_vectorstore = append_to_vectorstore(vectorstore, new_docs, embeddings, text_splitter)
-            
-            # Save the vectorstore directly to the output directory
-            output_dir = f"faiss_index_{ai_id}"
-            os.makedirs(output_dir, exist_ok=True)
-            updated_vectorstore.save_local(output_dir)
-            
-            # Create version.txt file
-            import datetime
-            version_txt_path = os.path.join(output_dir, "version.txt")
-            version = datetime.datetime.utcnow().isoformat()
-            with open(version_txt_path, "w") as f:
-                f.write(version)
-                
-            print(f"[add_links] Saved updated FAISS index to: {output_dir}")
-            
-            # Upload the updated index to Supabase
-            print(f"[add_links] Uploading updated vectorstore to Supabase")
-            upload_faiss_index_to_supabase(
-                ai_id,
-                supabase_url=SUPABASE_URL,
-                bucket=SUPABASE_STORAGE_BUCKET,
-                supabase_key=SUPABASE_KEY,
-                local_dir="."  # Use current directory as base, not the faiss_index dir itself
-            )
+            # Add new documents to Pinecone index
+            print(f"[add_links] Adding {len(new_docs)} new documents to Pinecone index")
+            append_documents_to_pinecone(ai_id, new_docs)
+            print(f"[add_links] Successfully added documents to Pinecone index")
             
             # Update business_info with new urls_crawled list and total_pages_crawled
-            # Use the actually crawled URLs from analytics, not just the requested ones
             print(f"[add_links] Updating urls_crawled and total_pages_crawled in DB for {ai_id}")
-            new_urls_list = list(set(existing_urls + actually_crawled_urls))  # Remove duplicates, use actually crawled URLs
-            res = supabase.table("business_info").update({
+            new_urls_list = list(set(existing_urls + actually_crawled_urls))  # Remove duplicates
+            supabase.table("business_info").update({
                 "urls_crawled": new_urls_list,
-                "total_pages_crawled": len(new_urls_list)  # Keep total_pages_crawled in sync
+                "total_pages_crawled": len(new_urls_list)
             }).eq("id", ai_id).execute()
             
             return jsonify({
@@ -356,9 +297,12 @@ def add_links():
             })
             
         except Exception as e:
-            print(f"[add_links] Error processing vectorstore: {str(e)}")
+            print(f"[add_links] Error adding documents to Pinecone: {str(e)}")
             traceback.print_exc()
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return jsonify({
+                'status': 'error',
+                'message': f'Error adding documents to Pinecone: {str(e)}'
+            }), 500
             
     except Exception as e:
         print(f"[add_links] Error: {str(e)}")
@@ -389,50 +333,30 @@ def remove_urls():
     new_urls = [u for u in current_urls if u not in urls_to_remove]
     print(f"[remove_urls] new_urls after removal: {new_urls}")
 
-    # 3. Delete vectors (always download latest from Supabase Storage first)
-    import os
-    from rag_utils import get_embeddings, load_faiss_vectorstore, delete_vectors_by_url, download_faiss_index_from_supabase, upload_faiss_index_to_supabase
-    from supabase_client import SUPABASE_URL, SUPABASE_KEY
-    SUPABASE_BUCKET = "vectorstores"
-    vectorstore_path = f"faiss_index_{ai_id}"
-    faiss_index_file = os.path.join(vectorstore_path, "index.faiss")
-    print(f"[remove_urls] Looking for FAISS index at: {faiss_index_file}")
-    # Download latest vectorstore if not present locally
-    if (not os.path.exists(faiss_index_file)) and SUPABASE_URL and SUPABASE_KEY:
-        try:
-            download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, local_dir=".")
-        except Exception as e:
-            print(f"[remove_urls] Warning: Could not download FAISS index from Supabase: {e}")
-    deleted_count = 0
-    if os.path.exists(faiss_index_file):
-        embeddings = get_embeddings()
-        vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
-        deleted_count = delete_vectors_by_url(vectorstore, urls_to_remove)
-        print(f"[remove_urls] delete_vectors_by_url returned: {deleted_count}")
-        vectorstore.save_local(vectorstore_path)
-        print(f"[remove_urls] Saved updated FAISS index to: {vectorstore_path}")
-        # Print existence of all FAISS files before upload
-        import os
-        for fname in ["index.faiss", "index.pkl", "splits.pkl"]:
-            fpath = os.path.join(vectorstore_path, fname)
-            print(f"[remove_urls] File {fpath} exists? {os.path.exists(fpath)}")
-        # Upload updated vectorstore to Supabase Storage
-        try:
-            print(f"[remove_urls] Uploading FAISS index from directory: {vectorstore_path}")
-            upload_faiss_index_to_supabase(ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
-        except Exception as e:
-            print(f"[remove_urls] Warning: Could not upload FAISS index to Supabase: {e}")
+    # 3. Delete vectors from Pinecone index
+    print(f"[remove_urls] Deleting vectors for URLs: {urls_to_remove}")
+    try:
+        deleted_count = delete_documents_from_pinecone_by_url(ai_id, urls_to_remove)
+        print(f"[remove_urls] Successfully deleted {deleted_count} vectors from Pinecone")
 
-        # 4. Update DB (only after upload is done)
+        # 4. Update DB after successful deletion
         supabase.table("business_info").update({
             "urls_crawled": new_urls,
-            "total_pages_crawled": len(new_urls)  # Keep total_pages_crawled in sync with urls_crawled
+            "total_pages_crawled": len(new_urls)
         }).eq("id", ai_id).execute()
-        print(f"[remove_urls] Updated urls_crawled and total_pages_crawled in DB for {ai_id} after FAISS upload.")
+        print(f"[remove_urls] Updated urls_crawled and total_pages_crawled in DB for {ai_id}")
 
         response = {"status": "success", "deleted_count": deleted_count, "new_urls": new_urls}
         print(f"[remove_urls] Returning response: {response}")
         return jsonify(response), 200
+        
+    except Exception as e:
+        print(f"[remove_urls] Error deleting from Pinecone: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            "status": "error", 
+            "message": f"Error deleting vectors: {str(e)}"
+        }), 500
 
 
 @app.route("/remove-files", methods=["POST"])
@@ -444,91 +368,44 @@ def remove_files():
         return jsonify({"status": "error", "message": "Missing ai_id or file_urls"}), 400
 
     try:
-        print(f"[remove_files] Removing {len(file_urls)} files from vectorstore for AI {ai_id}")
+        print(f"[remove_files] Removing {len(file_urls)} files from Pinecone index for AI {ai_id}")
         
-        # 1. Download the existing vectorstore from Supabase
-        print(f"[remove_files] Downloading vectorstore from Supabase")
-        vectorstore_path = f"faiss_index_{ai_id}"
-        faiss_index_file = os.path.join(vectorstore_path, "index.faiss")
-        print(f"[remove_files] Looking for FAISS index at: {faiss_index_file}")
-        
-        # Download latest vectorstore if not present locally
-        if (not os.path.exists(faiss_index_file)) and SUPABASE_URL and SUPABASE_KEY:
-            try:
-                print(f"[remove_files] Downloading vectorstore from Supabase")
-                download_faiss_index_from_supabase(ai_id, SUPABASE_URL, SUPABASE_STORAGE_BUCKET, local_dir=".")
-                print(f"[remove_files] Successfully downloaded vectorstore")
-            except Exception as e:
-                print(f"[remove_files] Error downloading vectorstore: {e}")
-                return jsonify({"status": "error", "message": f"Error downloading vectorstore: {str(e)}"}), 500
-        
-        # 2. Check if vectorstore exists locally
-        if not os.path.exists(vectorstore_path) or not os.path.isdir(vectorstore_path):
-            print(f"[remove_files] Error: Vectorstore directory not found at {vectorstore_path}")
-            return jsonify({"status": "error", "message": f"Vectorstore not found for AI {ai_id}"}), 404
-        
-        # 3. Load the existing vectorstore
-        print(f"[remove_files] Loading vectorstore from {vectorstore_path}")
-        try:
-            embeddings = get_embeddings()
-            vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
-            print(f"[remove_files] Successfully loaded vectorstore")
-        except Exception as e:
-            print(f"[remove_files] Error loading vectorstore: {e}")
-            return jsonify({"status": "error", "message": f"Error loading vectorstore: {str(e)}"}), 500
-        
-        # 4. Delete vectors for each file URL
+        # Delete vectors for each file URL from Pinecone
         deleted_count = 0
         for file_url in file_urls:
             try:
-                # The source in document metadata should match the file URL
                 print(f"[remove_files] Deleting vectors for file: {file_url}")
-                deleted = delete_vectors_by_url(vectorstore, file_url)
+                deleted = delete_documents_from_pinecone_by_url(ai_id, [file_url])
                 deleted_count += deleted
                 print(f"[remove_files] Deleted {deleted} vectors for file {file_url}")
             except Exception as e:
                 print(f"[remove_files] Error deleting vectors for file {file_url}: {e}")
         
-        # 5. Save the updated vectorstore if any vectors were deleted
-        if deleted_count > 0:
-            print(f"[remove_files] Saving updated vectorstore to {vectorstore_path}")
-            vectorstore.save_local(vectorstore_path)
+        # Update files_indexed count in business_info
+        try:
+            # First get current business_info to preserve other analytics
+            business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+            business_info = business_info_res.data
             
-            # 6. Upload the updated index to Supabase
-            print(f"[remove_files] Uploading updated vectorstore to Supabase")
-            upload_faiss_index_to_supabase(
-                ai_id,
-                supabase_url=SUPABASE_URL,
-                bucket=SUPABASE_STORAGE_BUCKET,
-                supabase_key=SUPABASE_KEY,
-                local_dir="."  # Use current directory as base
-            )
-            
-            # 7. Update files_indexed count in business_info
-            try:
-                # First get current business_info to preserve other analytics
-                business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
-                business_info = business_info_res.data
+            if business_info:
+                # Get current count or default to 0 if None
+                current_files_indexed = business_info.get("files_indexed") or 0
                 
-                if business_info:
-                    # Get current count or default to 0 if None
-                    current_files_indexed = business_info.get("files_indexed") or 0
-                    
-                    # Calculate new count (subtract deleted files)
-                    new_files_indexed = max(0, current_files_indexed - len(file_urls))
-                    
-                    # Update business_info with new count
-                    print(f"[remove_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
-                    supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
-            except Exception as e:
-                print(f"[remove_files] Warning: Could not update files_indexed count: {e}")
+                # Calculate new count (subtract deleted files)
+                new_files_indexed = max(0, current_files_indexed - len(file_urls))
+                
+                # Update business_info with new count
+                print(f"[remove_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
+                supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
+        except Exception as e:
+            print(f"[remove_files] Warning: Could not update files_indexed count: {e}")
         
-        # 8. Return response
+        # Return response
         response = {
             'status': 'success',
             'deleted_count': deleted_count,
             'files_processed': len(file_urls),
-            'message': f'Successfully removed {deleted_count} vectors from the vectorstore'
+            'message': f'Successfully removed {deleted_count} vectors from Pinecone index'
         }
         print(f"[remove_files] Returning response: {response}")
         return jsonify(response), 200

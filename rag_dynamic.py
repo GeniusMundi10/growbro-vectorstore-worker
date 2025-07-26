@@ -7,17 +7,54 @@ from supabase_client import supabase
 from rag_utils import (
     generate_prompt_template,
     create_chat_prompt_template,
-    get_embeddings,
-    load_faiss_vectorstore,
-    get_hybrid_retriever,
-    get_cross_encoder_reranker,
-    get_compression_retriever,
+    get_text_splitter,
+    extract_website_text_with_firecrawl,
+    extract_file_text,
     create_conversational_retrieval_chain,
     aggregate_crawl_analytics
 )
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 import os
+
+def save_splits_to_supabase(ai_id: str, splits):
+    """
+    Save document splits to Supabase storage as pickle file for BM25 hybrid retrieval.
+    """
+    try:
+        import pickle
+        import io
+        
+        print(f"[Supabase] Saving {len(splits)} document splits for AI {ai_id}")
+        
+        # Serialize splits to bytes
+        splits_data = pickle.dumps(splits)
+        
+        # Create file-like object from bytes
+        file_obj = io.BytesIO(splits_data)
+        
+        # Upload to Supabase storage
+        file_path = f"vectorstores/{ai_id}/splits.pkl"
+        
+        # Delete existing file if it exists
+        try:
+            supabase.storage.from_("vectorstores").remove([file_path])
+        except:
+            pass  # File doesn't exist, that's ok
+        
+        # Upload new file
+        response = supabase.storage.from_("vectorstores").upload(
+            file_path, 
+            file_obj,
+            file_options={"content-type": "application/octet-stream"}
+        )
+        
+        print(f"[Supabase] Successfully saved splits.pkl for AI {ai_id}")
+        return True
+        
+    except Exception as e:
+        print(f"[Supabase] Error saving splits for AI {ai_id}: {e}")
+        return False
 
 class DynamicRAGAgent:
     """
@@ -36,34 +73,16 @@ class DynamicRAGAgent:
         )
         self.config = self._fetch_config()
         self.llm = self._init_llm()
-        # Versioned vectorstore cache
-        if not hasattr(DynamicRAGAgent, '_vectorstore_cache'):
-            DynamicRAGAgent._vectorstore_cache = {}
-        if not hasattr(DynamicRAGAgent, '_vectorstore_version'):
-            DynamicRAGAgent._vectorstore_version = {}
-        from rag_utils import download_faiss_index_from_supabase, load_faiss_vectorstore, get_embeddings, get_vectorstore_version_from_supabase
-        SUPABASE_BUCKET = "vectorstores"
-        from supabase_client import SUPABASE_URL, SUPABASE_KEY
-        try:
-            current_version = get_vectorstore_version_from_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET)
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Could not fetch vectorstore version from Supabase: {e}")
-            current_version = None
-        cached_version = DynamicRAGAgent._vectorstore_version.get(self.ai_id)
-        if self.ai_id not in DynamicRAGAgent._vectorstore_cache or current_version != cached_version:
-            try:
-                download_faiss_index_from_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET)
-                vectorstore_path = f"faiss_index_{self.ai_id}"
-                embeddings = get_embeddings()
-                self.vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
-                if self.vectorstore:
-                    DynamicRAGAgent._vectorstore_cache[self.ai_id] = self.vectorstore
-                    DynamicRAGAgent._vectorstore_version[self.ai_id] = current_version
-            except Exception as e:
-                print(f"[DynamicRAGAgent] Could not download or load vectorstore from Supabase: {e}")
-                self.vectorstore = None
+        # Initialize Pinecone serverless vectorstore (no local caching needed)
+        from pinecone_serverless_utils import check_index_exists, PineconeServerlessRetriever
+        
+        # Check if Pinecone index exists for this AI
+        if check_index_exists(self.ai_id):
+            print(f"[DynamicRAGAgent] Pinecone serverless index found for AI {self.ai_id}")
+            self.vectorstore = PineconeServerlessRetriever(self.ai_id)
         else:
-            self.vectorstore = DynamicRAGAgent._vectorstore_cache[self.ai_id]
+            print(f"[DynamicRAGAgent] No Pinecone index found for AI {self.ai_id}. Will create on first build.")
+            self.vectorstore = None
         self.retriever = self._setup_retriever() if self.vectorstore else None
         self.prompt_template = self._build_prompt()
         self.chain = self._build_chain() if self.retriever else None
@@ -74,39 +93,33 @@ class DynamicRAGAgent:
 
     def extract_and_build_vectorstore(self, force_rebuild=False):
         """
-        Aggregate and embed all relevant knowledge sources for this AI (websites, ai_links, ai_file), and build the FAISS vectorstore.
-        Only builds if not present or if force_rebuild=True. Otherwise, loads existing vectorstore.
-        Integrates Supabase Storage for persistent FAISS index if env vars are set.
+        Aggregate all relevant knowledge sources for this AI (websites, ai_links, ai_file) and create Pinecone serverless vectorstore.
+        Uses Pinecone's managed embedding service - no local computation required!
+        Only builds if not present or if force_rebuild=True.
         """
         import os
-        from rag_utils import (
-            extract_website_text_with_firecrawl, generic_create_vectorstore, load_faiss_vectorstore,
-            get_embeddings, get_text_splitter, download_faiss_index_from_supabase, upload_faiss_index_to_supabase, extract_file_text,
-            aggregate_crawl_analytics
-        )
         from langchain_core.documents import Document
-        from supabase_client import SUPABASE_URL, SUPABASE_KEY, supabase
-        import pickle
-        vectorstore_path = f"faiss_index_{self.ai_id}"
-        faiss_index_file = os.path.join(vectorstore_path, "index.faiss")
-        embeddings = get_embeddings()
-        SUPABASE_BUCKET = "vectorstores"
-
-        # Download from Supabase if not present locally
-        if not os.path.exists(faiss_index_file) and SUPABASE_URL and SUPABASE_KEY:
-            try:
-                print(f"[DynamicRAGAgent] Attempting to download FAISS index for {self.ai_id} from Supabase Storage bucket '{SUPABASE_BUCKET}'...")
-                download_faiss_index_from_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET)
-                print(f"[DynamicRAGAgent] Downloaded FAISS index for {self.ai_id} from Supabase Storage.")
-            except Exception as e:
-                print(f"[DynamicRAGAgent] Warning: Could not download FAISS index from Supabase: {e}")
-        if os.path.exists(faiss_index_file) and not force_rebuild:
-            print(f"[DynamicRAGAgent] Vectorstore already exists at {vectorstore_path}. Loading...")
-            self.vectorstore = load_faiss_vectorstore(vectorstore_path, embeddings)
+        from supabase_client import supabase
+        from pinecone_serverless_utils import (
+            check_index_exists, 
+            upsert_documents_with_lightweight_embeddings, 
+            PineconeServerlessRetriever,
+            delete_vectors_by_ai_id
+        )
+        
+        # Check if Pinecone index already exists and we don't need to rebuild
+        if check_index_exists(self.ai_id) and not force_rebuild:
+            print(f"[DynamicRAGAgent] Pinecone index already exists for AI {self.ai_id}. Loading...")
+            self.vectorstore = PineconeServerlessRetriever(self.ai_id)
             self.retriever = self._setup_retriever()
             self.chain = self._build_chain()
-            print("[DynamicRAGAgent] Vectorstore loaded.")
+            print("[DynamicRAGAgent] Pinecone vectorstore loaded.")
             return
+        
+        # If force_rebuild, clear existing vectors
+        if force_rebuild and check_index_exists(self.ai_id):
+            print(f"[DynamicRAGAgent] Force rebuild requested. Clearing existing vectors for AI {self.ai_id}...")
+            delete_vectors_by_ai_id(self.ai_id)
 
         # --- Aggregate all sources and track analytics ---
         documents = []
@@ -183,37 +196,29 @@ class DynamicRAGAgent:
         analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
         # Save analytics after vectorstore upload and after setting vectorstore_ready
 
-        # --- Chunk, embed, and save vectorstore ---
+        # --- Process and upload documents to Pinecone serverless ---
         if not documents:
             raise RuntimeError("No documents found for embedding from any source.")
+        
         text_splitter = get_text_splitter()
         splits = text_splitter.split_documents(documents)
-        os.makedirs(vectorstore_path, exist_ok=True)
-        with open(os.path.join(vectorstore_path, "splits.pkl"), "wb") as f:
-            pickle.dump(splits, f)
-        print(f"[DynamicRAGAgent] Saved splits for BM25 at {vectorstore_path}/splits.pkl")
-        print(f"[DynamicRAGAgent] Creating vectorstore at {vectorstore_path}")
-        self.vectorstore = generic_create_vectorstore(splits, embeddings, vectorstore_path)
+        
+        print(f"[DynamicRAGAgent] Creating Pinecone serverless vectorstore with {len(splits)} document chunks")
+        print(f"[DynamicRAGAgent] ⚡ Using Pinecone managed embeddings - no local computation!")
+        
+        # Upload to Pinecone with lightweight embeddings (much faster than heavy FAISS index building)
+        upsert_documents_with_lightweight_embeddings(self.ai_id, splits)
+        
+        # Save splits to Supabase for BM25 hybrid retrieval
+        print(f"[DynamicRAGAgent] Saving document splits to Supabase for hybrid retrieval")
+        save_splits_to_supabase(self.ai_id, splits)
+        
+        # Create retriever
+        self.vectorstore = PineconeServerlessRetriever(self.ai_id)
         self.retriever = self._setup_retriever()
         self.chain = self._build_chain()
-        print("[DynamicRAGAgent] Vectorstore and retriever rebuilt.")
-        # --- Upload new/updated FAISS index to Supabase Storage ---
-        if SUPABASE_URL and SUPABASE_KEY:
-            try:
-                print(f"[DynamicRAGAgent] Uploading FAISS index for {self.ai_id} to Supabase Storage bucket '{SUPABASE_BUCKET}'...")
-                upload_faiss_index_to_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
-                print(f"[DynamicRAGAgent] Uploaded FAISS index for {self.ai_id} to Supabase Storage.")
-                # Write and upload version.txt
-                import datetime, os
-                vectorstore_path = f"faiss_index_{self.ai_id}"
-                version_txt_path = os.path.join(vectorstore_path, "version.txt")
-                version = datetime.datetime.utcnow().isoformat()
-                with open(version_txt_path, "w") as f:
-                    f.write(version)
-                upload_faiss_index_to_supabase(self.ai_id, SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_KEY, local_dir=".")
-                print(f"[DynamicRAGAgent] Uploaded version.txt for {self.ai_id} to Supabase Storage.")
-            except Exception as e:
-                print(f"[DynamicRAGAgent] Warning: Could not upload FAISS index to Supabase: {e}")
+        
+        print("[DynamicRAGAgent] ✅ Pinecone serverless vectorstore created successfully - MUCH faster!")
         # Set vectorstore_ready=True after upload
         try:
             supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
@@ -250,28 +255,20 @@ class DynamicRAGAgent:
         )
 
     def _load_vectorstore(self):
-        vectorstore_path = f"faiss_index_{self.ai_id}"
-        embeddings = get_embeddings()
+        """Load Pinecone vectorstore for this AI."""
         try:
-            return load_faiss_vectorstore(vectorstore_path, embeddings)
+            from pinecone_serverless_utils import get_pinecone_retriever
+            return get_pinecone_retriever(self.ai_id)
         except Exception as e:
-            print(f"[DynamicRAGAgent] Could not load vectorstore for {self.ai_id}: {e}")
+            print(f"[DynamicRAGAgent] Could not load Pinecone vectorstore for {self.ai_id}: {e}")
             return None
 
     def _setup_retriever(self):
         if not self.vectorstore:
             raise RuntimeError("No vectorstore loaded.")
-        import os, pickle
-        vectorstore_path = f"faiss_index_{self.ai_id}"
-        splits_path = os.path.join(vectorstore_path, "splits.pkl")
-        if not os.path.exists(splits_path):
-            raise RuntimeError(f"splits.pkl not found at {splits_path}. Please rebuild vectorstore.")
-        with open(splits_path, "rb") as f:
-            splits = pickle.load(f)
-        # Hybrid retriever (BM25 + dense)
-        base_retriever = get_hybrid_retriever(self.vectorstore, splits)
-        reranker = get_cross_encoder_reranker()
-        return get_compression_retriever(base_retriever, reranker)
+        # Pinecone serverless retriever is already initialized
+        # Return the vectorstore as it implements the retriever interface
+        return self.vectorstore
 
     def _build_prompt(self):
         """
