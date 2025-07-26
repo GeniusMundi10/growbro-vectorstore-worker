@@ -318,7 +318,7 @@ def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
         return 0
 
 
-from langchain.retrievers import BaseRetriever
+from langchain_core.retrievers import BaseRetriever
 
 class PineconeServerlessRetriever(BaseRetriever):
     """Custom retriever that uses Pinecone serverless embeddings and is compatible with LangChain."""
