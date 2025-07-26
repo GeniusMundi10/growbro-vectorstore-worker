@@ -26,7 +26,7 @@ def get_pinecone_client():
 def get_pinecone_index_name(ai_id: str) -> str:
     """Generate Pinecone index name for a specific AI."""
     # Pinecone index names must be lowercase and alphanumeric with hyphens
-    return f"gb_{str(ai_id).lower().replace('_', '-')}"
+    return f"gb-{str(ai_id).lower().replace('_', '-')}"
 
 
 def create_pinecone_serverless_index(ai_id: str, embedding_model: str = "all-mpnet-base-v2"):
