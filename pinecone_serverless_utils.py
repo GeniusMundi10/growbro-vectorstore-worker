@@ -346,29 +346,4 @@ def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
         return 0
 
 
-from langchain_core.retrievers import BaseRetriever
-from pydantic import Field
-
-class PineconeServerlessRetriever(BaseRetriever):
-    ai_id: str = Field()
-    top_k: int = Field(default=5)
-
-    def get_relevant_documents(self, query: str) -> list:
-        results = query_pinecone_with_lightweight_embeddings(self.ai_id, query, self.top_k)
-        documents = []
-        for result in results:
-            doc = Document(
-                page_content=result["text"],
-                metadata={
-                    "source": result["source"],
-                    "score": result["score"],
-                    "pinecone_id": result["id"]
-                }
-            )
-            documents.append(doc)
-        return documents
-
-    # Retain invoke for backward compatibility if needed
-    def invoke(self, query: str) -> list:
-        return self.get_relevant_documents(query)
 

@@ -213,13 +213,7 @@ class DynamicRAGAgent:
         print(f"[DynamicRAGAgent] Saving document splits to Supabase for hybrid retrieval")
         save_splits_to_supabase(self.ai_id, splits)
         
-        # Create retriever
-        self.vectorstore = PineconeServerlessRetriever(ai_id=self.ai_id)
-        self.retriever = self._setup_retriever()
-        self.chain = self._build_chain()
         
-        print("[DynamicRAGAgent] ✅ Pinecone serverless vectorstore created successfully - MUCH faster!")
-        # Set vectorstore_ready=True after upload
         try:
             supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
             print(f"[DynamicRAGAgent] Set vectorstore_ready=True for {self.ai_id}")
