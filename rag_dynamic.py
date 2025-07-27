@@ -212,7 +212,7 @@ class DynamicRAGAgent:
         analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
         try:
             supabase.table("business_info").update({
-                "total_pages_crawled": analytics['total_pages_crawled'],
+                "total_pages_crawled": analytics['pages_crawled'],
                 "urls_crawled": analytics['urls_crawled'],
                 "files_indexed": analytics['files_indexed']
             }).eq("id", self.ai_id).execute()
