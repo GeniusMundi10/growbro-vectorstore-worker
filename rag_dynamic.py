@@ -65,14 +65,9 @@ class DynamicRAGAgent:
     def __init__(self, ai_id, memory=None, auto_build_vectorstore=False, session_cookie=None):
         self.session_cookie = session_cookie
         self.ai_id = ai_id
-        self.memory = memory or ConversationBufferMemory(
-            memory_key="chat_history",
-            input_key="question",
-            output_key="answer",
-            return_messages=True
-        )
+        
         self.config = self._fetch_config()
-        self.llm = self._init_llm()
+        
         
         # Import check_index_exists from pinecone_serverless_utils
         from pinecone_serverless_utils import check_index_exists
