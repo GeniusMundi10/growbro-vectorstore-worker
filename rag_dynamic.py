@@ -105,7 +105,7 @@ class DynamicRAGAgent:
         from pinecone_serverless_utils import (
             check_index_exists, 
             upsert_documents_with_lightweight_embeddings, 
-            PineconeServerlessRetriever,
+            
             delete_vectors_by_ai_id
         )
         
@@ -239,147 +239,10 @@ class DynamicRAGAgent:
             raise ValueError(f"No config found for ai_id={self.ai_id}")
         return res.data[0]
 
-    def _init_llm(self):
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("No OpenAI API key found for this AI.")
-        return ChatOpenAI(
-            openai_api_key=api_key,
-            model_name="gpt-4.1-nano",
-            streaming=True,
-            temperature=0.7
-        )
+  
 
-    def _load_vectorstore(self):
-        """Load Pinecone vectorstore for this AI."""
-        try:
-            from pinecone_serverless_utils import get_pinecone_retriever
-            return get_pinecone_retriever(self.ai_id)
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Could not load Pinecone vectorstore for {self.ai_id}: {e}")
-            return None
+  
 
-    def _setup_retriever(self):
-        if not self.vectorstore:
-            raise RuntimeError("No vectorstore loaded.")
-        # Pinecone serverless retriever is already initialized
-        # Return the vectorstore as it implements the retriever interface
-        return self.vectorstore
+   
 
-    def _build_prompt(self):
-        """
-        Build a dynamic prompt using business_info, ai_greeting, ai_services, ai_resource_link_file (all null-safe).
-        Includes greetings, services, resource links, and core company info.
-        """
-        from supabase_client import supabase
-        from rag_utils import create_chat_prompt_template
-        company_info = {
-            "bot_name": self.config.get("agent_type", "AI Assistant"),
-            "company_name": self.config.get("company_name", "Company"),
-            "website_url": self.config.get("website", ""),
-            "contact_url": self.config.get("email", ""),
-            "language": self.config.get("language", "English"),
-            "extra_instructions": self.config.get("extra_instructions", "")
-        }
-
-        # 1. Greetings (optional)
-        try:
-            greetings_res = supabase.table("ai_greeting").select("*").eq("user_id", self.config["user_id"]).execute()
-            greetings = [row["message"] for row in (greetings_res.data or []) if row.get("message")]
-            company_info["greetings"] = "\n".join(greetings) if greetings else ""
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Error fetching ai_greeting: {e}")
-            company_info["greetings"] = ""
-
-        # 2. Services (optional)
-        try:
-            services_res = supabase.table("ai_services").select("*").eq("user_id", self.config["user_id"]).execute()
-            if services_res.data:
-                service = services_res.data[0]
-                company_info["business_services"] = service.get("business_services", "")
-                company_info["differentiation"] = service.get("differentiation", "")
-                company_info["profitable_line_items"] = service.get("profitable_line_items", "")
-                company_info["best_sales_lines"] = service.get("best_sales_lines", "")
-            else:
-                company_info["business_services"] = ""
-                company_info["differentiation"] = ""
-                company_info["profitable_line_items"] = ""
-                company_info["best_sales_lines"] = ""
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Error fetching ai_services: {e}")
-            company_info["business_services"] = ""
-            company_info["differentiation"] = ""
-            company_info["profitable_line_items"] = ""
-            company_info["best_sales_lines"] = ""
-
-        # 3. Resource Links (optional, grouped by category from CSV)
-        import csv
-        import requests
-        from collections import defaultdict
-        try:
-            resource_links_res = supabase.table("ai_resource_link_file").select("*").eq("user_id", self.config["user_id"]).execute()
-            csv_urls = [row["url"] for row in (resource_links_res.data or []) if row.get("url")]
-            category_resources = defaultdict(list)
-            for csv_url in csv_urls:
-                try:
-                    resp = requests.get(csv_url)
-                    resp.raise_for_status()
-                    decoded = resp.content.decode("utf-8")
-                    reader = csv.DictReader(decoded.splitlines())
-                    for row in reader:
-                        title = row.get("Title")
-                        url = row.get("URL")
-                        category = row.get("Category")
-                        if title and url and category:
-                            for cat in [c.strip() for c in category.split(",")]:
-                                category_resources[cat].append(f"- [{title}]({url})")
-                except Exception as e:
-                    print(f"[DynamicRAGAgent] Error downloading/parsing resource CSV: {e}")
-            # Format grouped resources for the prompt
-            if category_resources:
-                grouped = []
-                for cat, links in category_resources.items():
-                    grouped.append(f"{cat}:\n" + "\n".join(links))
-                company_info["resource_links"] = "\n\n".join(grouped)
-            else:
-                company_info["resource_links"] = ""
-        except Exception as e:
-            print(f"[DynamicRAGAgent] Error fetching ai_resource_link_file: {e}")
-            company_info["resource_links"] = ""
-
-        # You may want to extend your base template to include these fields for richer bot persona
-        return create_chat_prompt_template(company_info)
-
-    def _build_chain(self):
-        return create_conversational_retrieval_chain(
-            llm=self.llm,
-            retriever=self.retriever,
-            prompt_template=self.prompt_template,
-            memory=self.memory
-        )
-
-    def get_response(self, question, chat_history=None):
-        """
-        Get an answer for a user question. Only call this if is_ready() is True.
-        Raises a clear error if not ready (e.g. vectorstore missing).
-        """
-        if not self.is_ready():
-            raise RuntimeError("DynamicRAGAgent is not ready. Please build the vectorstore first using extract_and_build_vectorstore().")
-        if chat_history:
-            self.memory.chat_memory.messages = chat_history
-        # Retrieve context
-        docs = self.retriever.invoke(question)
-        context = "\n".join([doc.page_content for doc in docs])
-        chain_inputs = {
-            "question": question,
-            "context": context,
-            "chat_history": self.memory.buffer if hasattr(self.memory, "buffer") else ""
-        }
-        response = self.chain.invoke(chain_inputs)
-        answer = response["answer"] if isinstance(response, dict) and "answer" in response else str(response)
-        self.memory.save_context({"question": question}, {"answer": answer})
-        return answer
-
-# Example usage:
-# agent = DynamicRAGAgent(ai_id="your_ai_id_here")
-# response = agent.get_response("What are your business hours?")
+    
