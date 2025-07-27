@@ -18,7 +18,7 @@ from pinecone_serverless_utils import (
     delete_vectors_by_ai_id,
     delete_vectors_by_source,
     get_vectorstore_stats,
-    PineconeServerlessRetriever
+    
 )
 import traceback
 import os
