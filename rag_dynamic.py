@@ -106,7 +106,7 @@ class DynamicRAGAgent:
             return
         
         # If force_rebuild, clear existing vectors
-        if force_rebuild and check_index_exists(self.ai_id):
+        if force_rebuild and check_index_exists():
             print(f"[DynamicRAGAgent] Force rebuild requested. Clearing existing vectors for AI {self.ai_id}...")
             delete_vectors_by_ai_id(self.ai_id)
 
