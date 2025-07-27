@@ -73,8 +73,8 @@ class DynamicRAGAgent:
         )
         self.config = self._fetch_config()
         self.llm = self._init_llm()
-        # Initialize Pinecone serverless vectorstore (no local caching needed)
-        from pinecone_serverless_utils import check_index_exists, PineconeServerlessRetriever
+        
+        
         
         # Check if Pinecone index exists for this AI
         if check_index_exists(self.ai_id):
