@@ -131,8 +131,9 @@ def upsert_documents_with_lightweight_embeddings(ai_id: str, documents: List[Doc
             vector_data["values"] = embeddings[j]
         
         try:
-            index.upsert(vectors=vectors_to_upsert)
-            print(f"[Pinecone] Upserted final batch of {len(vectors_to_upsert)} vectors")
+            # Use ai_id as namespace for multi-tenancy (was missing in final batch)
+            index.upsert(vectors=vectors_to_upsert, namespace=ai_id)
+            print(f"[Pinecone] Upserted final batch of {len(vectors_to_upsert)} vectors to namespace {ai_id}")
         except Exception as e:
             print(f"[Pinecone] Error upserting final batch: {e}")
             raise
