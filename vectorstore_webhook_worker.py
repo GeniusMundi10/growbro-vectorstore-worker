@@ -12,6 +12,7 @@ from rag_utils import (
 )
 from pinecone_serverless_utils import (
     check_index_exists,
+    check_namespace_exists,
     upsert_documents_with_lightweight_embeddings,
     append_documents_to_pinecone,
     delete_vectors_by_ai_id,
@@ -114,11 +115,17 @@ def add_files():
         
         print(f"[add_files] Found {len(new_file_urls)} new files to process")
         
-        # Check if Pinecone index exists for this AI
-        if not check_index_exists(ai_id):
-            print(f"[add_files] No Pinecone index found for AI {ai_id}. Will be created automatically.")
+        # Check if consolidated Pinecone index exists
+        if not check_index_exists():
+            print(f"[add_files] No consolidated Pinecone index found. Will be created automatically.")
         else:
-            print(f"[add_files] Found existing Pinecone index for AI {ai_id}")
+            print(f"[add_files] Found consolidated Pinecone index. Will check namespace.")
+            
+        # Check if this AI's namespace exists
+        if not check_namespace_exists(ai_id):
+            print(f"[add_files] No namespace found for AI {ai_id}. Will be created automatically.")
+        else:
+            print(f"[add_files] Found existing namespace for AI {ai_id}")
             
         # Process new files
         new_docs = []
@@ -250,10 +257,16 @@ def add_links():
                 'urls_crawled': existing_urls
             })
         
-        # Check if Pinecone index exists for this AI
+        # Check if consolidated Pinecone index exists
         print(f"[add_links] Checking Pinecone index for {ai_id}")
-        if not check_index_exists(ai_id):
-            print(f"[add_links] No Pinecone index found for AI {ai_id}. Will be created automatically.")
+        if not check_index_exists():
+            print(f"[add_links] No consolidated Pinecone index found. Will be created automatically.")
+            
+        # Check if this AI's namespace exists
+        if not check_namespace_exists(ai_id):
+            print(f"[add_links] No namespace found for AI {ai_id}. Will be created automatically.")
+        else:
+            print(f"[add_links] Found existing namespace for AI {ai_id}")
         
         # Crawl the new URLs
         print(f"[add_links] Crawling {len(new_urls_to_crawl)} new URLs for {ai_id}")
@@ -333,10 +346,10 @@ def remove_urls():
     new_urls = [u for u in current_urls if u not in urls_to_remove]
     print(f"[remove_urls] new_urls after removal: {new_urls}")
 
-    # 3. Delete vectors from Pinecone index
+    # 3. Delete vectors from Pinecone namespace
     print(f"[remove_urls] Deleting vectors for URLs: {urls_to_remove}")
     try:
-        deleted_count = delete_documents_from_pinecone_by_url(ai_id, urls_to_remove)
+        deleted_count = delete_vectors_by_source(ai_id, urls_to_remove)
         print(f"[remove_urls] Successfully deleted {deleted_count} vectors from Pinecone")
 
         # 4. Update DB after successful deletion
@@ -375,7 +388,7 @@ def remove_files():
         for file_url in file_urls:
             try:
                 print(f"[remove_files] Deleting vectors for file: {file_url}")
-                deleted = delete_documents_from_pinecone_by_url(ai_id, [file_url])
+                deleted = delete_vectors_by_source(ai_id, [file_url])
                 deleted_count += deleted
                 print(f"[remove_files] Deleted {deleted} vectors for file {file_url}")
             except Exception as e:

@@ -3,6 +3,7 @@ rag_utils.py
 Essential utility functions for growbro-worker vectorstore creation.
 """
 
+from typing import List
 import os
 import time
 import requests

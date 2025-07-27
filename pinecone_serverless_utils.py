@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any
 from langchain_core.documents import Document
 from pinecone import Pinecone as PineconeClient
 from pinecone import ServerlessSpec
+from langchain_openai import OpenAIEmbeddings
 
 
 def get_pinecone_client():
@@ -23,26 +24,27 @@ def get_pinecone_client():
     return PineconeClient(api_key=api_key)
 
 
-def get_pinecone_index_name(ai_id: str) -> str:
-    """Generate Pinecone index name for a specific AI."""
-    # Pinecone index names must be lowercase and alphanumeric with hyphens
-    return f"gb-{str(ai_id).lower().replace('_', '-')}"
+def get_pinecone_index_name() -> str:
+    """Generate consolidated Pinecone index name for all AIs."""
+    # Using a single consolidated index for all AIs with namespaces
+    return "gb-consolidated"
 
 
-def create_pinecone_serverless_index(ai_id: str, embedding_model: str = "all-mpnet-base-v2"):
-    """Create Pinecone serverless index with lightweight embeddings."""
+def create_pinecone_serverless_index(embedding_model: str = "text-embedding-3-small"):
+    """Create consolidated Pinecone serverless index with OpenAI embeddings."""
     client = get_pinecone_client()
-    index_name = get_pinecone_index_name(ai_id)
+    index_name = get_pinecone_index_name()
     
     # Check if index exists
     existing_indexes = [index.name for index in client.list_indexes()]
     
     if index_name not in existing_indexes:
-        print(f"[Pinecone] Creating serverless index: {index_name}")
+        print(f"[Pinecone] Creating consolidated serverless index: {index_name}")
         
+        # OpenAI text-embedding-3-small dimension is 1536
         client.create_index(
             name=index_name,
-            dimension=768,  # all-mpnet-base-v2 dimension
+            dimension=1536,  # OpenAI text-embedding-3-small dimension
             metric="cosine",
             spec=ServerlessSpec(
                 cloud="aws",
@@ -54,29 +56,29 @@ def create_pinecone_serverless_index(ai_id: str, embedding_model: str = "all-mpn
         print(f"[Pinecone] Waiting for index {index_name} to be ready...")
         while not client.describe_index(index_name).status.ready:
             time.sleep(1)
-        print(f"[Pinecone] Serverless index {index_name} is ready!")
+        print(f"[Pinecone] Consolidated serverless index {index_name} is ready!")
     else:
-        print(f"[Pinecone] Index {index_name} already exists")
+        print(f"[Pinecone] Consolidated index {index_name} already exists")
 
 
 def upsert_documents_with_lightweight_embeddings(ai_id: str, documents: List[Document], batch_size: int = 100):
-    """Upload documents to Pinecone with lightweight local embeddings - performance gain from eliminating FAISS index building."""
-    from sentence_transformers import SentenceTransformer
+    """Upload documents to Pinecone with OpenAI embeddings using namespaces."""
+    from langchain_openai import OpenAIEmbeddings
     
     client = get_pinecone_client()
-    index_name = get_pinecone_index_name(ai_id)
+    index_name = get_pinecone_index_name()
     
-    # Ensure index exists
-    create_pinecone_serverless_index(ai_id)
+    # Ensure consolidated index exists
+    create_pinecone_serverless_index()
     
     # Get index
     index = client.Index(index_name)
     
-    # Use lightweight embedding model (much faster than previous heavy models)
-    print(f"[Pinecone] Loading lightweight embedding model...")
-    embedding_model = SentenceTransformer('all-mpnet-base-v2')  # High accuracy model
+    # Initialize OpenAI embeddings
+    print(f"[Pinecone] Setting up OpenAI embeddings...")
+    embedding_model = OpenAIEmbeddings(model="text-embedding-3-small")
     
-    print(f"[Pinecone] Upserting {len(documents)} documents with lightweight embeddings to {index_name}")
+    print(f"[Pinecone] Upserting {len(documents)} documents with OpenAI embeddings to {index_name}")
     
     # Prepare documents for batch upsert
     vectors_to_upsert = []
@@ -103,14 +105,15 @@ def upsert_documents_with_lightweight_embeddings(ai_id: str, documents: List[Doc
         # Process batch when we reach batch_size
         if len(vectors_to_upsert) >= batch_size:
             # Generate embeddings for the batch
-            embeddings = embedding_model.encode(texts_to_embed)
+            embeddings = embedding_model.embed_documents(texts_to_embed)
             
             # Add embeddings to vectors
             for j, vector_data in enumerate(vectors_to_upsert):
-                vector_data["values"] = embeddings[j].tolist()
+                vector_data["values"] = embeddings[j]
             
             try:
-                index.upsert(vectors=vectors_to_upsert)
+                # Use ai_id as namespace for multi-tenancy
+                index.upsert(vectors=vectors_to_upsert, namespace=ai_id)
                 print(f"[Pinecone] Upserted batch of {len(vectors_to_upsert)} vectors")
                 vectors_to_upsert = []
                 texts_to_embed = []
@@ -121,11 +124,11 @@ def upsert_documents_with_lightweight_embeddings(ai_id: str, documents: List[Doc
     # Process remaining vectors
     if vectors_to_upsert:
         # Generate embeddings for remaining texts
-        embeddings = embedding_model.encode(texts_to_embed)
+        embeddings = embedding_model.embed_documents(texts_to_embed)
         
         # Add embeddings to vectors
         for j, vector_data in enumerate(vectors_to_upsert):
-            vector_data["values"] = embeddings[j].tolist()
+            vector_data["values"] = embeddings[j]
         
         try:
             index.upsert(vectors=vectors_to_upsert)
@@ -138,100 +141,103 @@ def upsert_documents_with_lightweight_embeddings(ai_id: str, documents: List[Doc
     return index
 
 
-def query_pinecone_with_lightweight_embeddings(ai_id: str, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
-    """Query Pinecone index using lightweight embeddings."""
-    from sentence_transformers import SentenceTransformer
+def query_pinecone_with_lightweight_embeddings(ai_id: str, query_text: str, top_k: int = 5):
+    """Query Pinecone index using OpenAI embeddings and namespaces."""
+    from langchain_openai import OpenAIEmbeddings
     
     client = get_pinecone_client()
-    index_name = get_pinecone_index_name(ai_id)
+    index_name = get_pinecone_index_name()
     
-    try:
-        # Get index
-        index = client.Index(index_name)
-        
-        # Use same lightweight embedding model as upsert
-        embedding_model = SentenceTransformer('all-mpnet-base-v2')
-        
-        print(f"[Pinecone] Querying {index_name} with lightweight embeddings")
-        
-        # Generate embedding for query text
-        query_embedding = embedding_model.encode([query_text])[0].tolist()
-        
-        # Query with embedding vector
-        results = index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            include_metadata=True,
-            filter={"ai_id": ai_id}
-        )
-        
-        # Format results
-        formatted_results = []
-        for match in results.matches:
-            formatted_results.append({
-                "id": match.id,
-                "score": match.score,
-                "text": match.metadata.get("text", ""),
-                "source": match.metadata.get("source", ""),
-                "metadata": match.metadata
-            })
-        
-        print(f"[Pinecone] Retrieved {len(formatted_results)} results")
-        return formatted_results
-        
-    except Exception as e:
-        print(f"[Pinecone] Error querying index: {e}")
+    # Check if consolidated index exists
+    existing_indexes = [index.name for index in client.list_indexes()]
+    if index_name not in existing_indexes:
+        print(f"[Pinecone] Error: Consolidated index {index_name} does not exist")
         return []
+    
+    # Get index
+    index = client.Index(index_name)
+    
+    # Use OpenAI embeddings for queries
+    embedding_model = OpenAIEmbeddings(model="text-embedding-3-small")
+        
+    print(f"[Pinecone] Querying {index_name} with OpenAI embeddings")
+        
+    # Generate embedding for query text
+    query_embedding = embedding_model.embed_query(query_text)
+        
+    # Query the index using namespace
+    query_response = index.query(
+        vector=query_embedding,
+        top_k=top_k,
+        include_metadata=True,
+        namespace=ai_id
+    )
+        
+    # Format results
+    formatted_results = []
+    for match in query_response.matches:
+        formatted_results.append({
+            "id": match.id,
+            "score": match.score,
+            "text": match.metadata.get("text", ""),
+            "source": match.metadata.get("source", ""),
+            "metadata": match.metadata
+        })
+        
+    print(f"[Pinecone] Retrieved {len(formatted_results)} results")
+    return formatted_results
 
 
 def delete_vectors_by_ai_id(ai_id: str):
-    """Delete all vectors for a specific AI."""
+    """Delete all vectors for a specific AI using namespaces."""
     try:
         client = get_pinecone_client()
-        index_name = get_pinecone_index_name(ai_id)
+        index_name = get_pinecone_index_name()
         
         existing_indexes = [index.name for index in client.list_indexes()]
         
-        if index_name in existing_indexes:
-            index = client.Index(index_name)
+        if index_name not in existing_indexes:
+            print(f"[Pinecone] Consolidated index {index_name} does not exist, nothing to delete")
+            return
             
-            print(f"[Pinecone] Deleting all vectors for AI: {ai_id}")
-            
-            # Delete vectors with ai_id filter
-            index.delete(filter={"ai_id": ai_id})
-            
-            print(f"[Pinecone] Successfully deleted vectors for AI: {ai_id}")
-        else:
-            print(f"[Pinecone] Index {index_name} does not exist")
-            
+        index = client.Index(index_name)
+        
+        # Delete the entire namespace for this AI
+        print(f"[Pinecone] Deleting entire namespace for AI: {ai_id}")
+        delete_response = index.delete(delete_all=True, namespace=ai_id)
+        print(f"[Pinecone] Successfully deleted vectors for AI: {ai_id}")
+        
     except Exception as e:
         print(f"[Pinecone] Error deleting vectors: {e}")
 
 
-def delete_pinecone_index(ai_id: str):
-    """Delete entire Pinecone index for an AI."""
+def delete_pinecone_namespace(ai_id: str):
+    """Delete entire namespace for an AI in the consolidated index."""
     try:
         client = get_pinecone_client()
-        index_name = get_pinecone_index_name(ai_id)
+        index_name = get_pinecone_index_name()
         
         existing_indexes = [index.name for index in client.list_indexes()]
         
-        if index_name in existing_indexes:
-            print(f"[Pinecone] Deleting index: {index_name}")
-            client.delete_index(index_name)
-            print(f"[Pinecone] Successfully deleted index: {index_name}")
-        else:
-            print(f"[Pinecone] Index {index_name} does not exist")
-            
+        if index_name not in existing_indexes:
+            print(f"[Pinecone] Consolidated index {index_name} does not exist, nothing to delete")
+            return
+        
+        # Delete just the namespace for this AI
+        index = client.Index(index_name)
+        print(f"[Pinecone] Deleting namespace for AI: {ai_id} in index {index_name}")
+        delete_response = index.delete(delete_all=True, namespace=ai_id)
+        print(f"[Pinecone] Successfully deleted namespace for AI: {ai_id}")
+        
     except Exception as e:
         print(f"[Pinecone] Error deleting index: {e}")
 
 
 def get_vectorstore_stats(ai_id: str) -> Optional[Dict[str, Any]]:
-    """Get statistics about the Pinecone index."""
+    """Get statistics about the AI's namespace in the consolidated Pinecone index."""
     try:
         client = get_pinecone_client()
-        index_name = get_pinecone_index_name(ai_id)
+        index_name = get_pinecone_index_name()
         
         existing_indexes = [index.name for index in client.list_indexes()]
         
@@ -239,7 +245,7 @@ def get_vectorstore_stats(ai_id: str) -> Optional[Dict[str, Any]]:
             return None
             
         index = client.Index(index_name)
-        stats = index.describe_index_stats()
+        stats = index.describe_index_stats(namespace=ai_id)
         
         return {
             "total_vector_count": stats.total_vector_count,
@@ -253,17 +259,39 @@ def get_vectorstore_stats(ai_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def check_index_exists(ai_id: str) -> bool:
-    """Check if Pinecone index exists for the AI."""
+def check_index_exists() -> bool:
+    """Check if consolidated Pinecone index exists."""
     try:
         client = get_pinecone_client()
-        index_name = get_pinecone_index_name(ai_id)
+        index_name = get_pinecone_index_name()
         
         existing_indexes = [index.name for index in client.list_indexes()]
         return index_name in existing_indexes
         
     except Exception as e:
         print(f"[Pinecone] Error checking index existence: {e}")
+        return False
+
+
+def check_namespace_exists(ai_id: str) -> bool:
+    """Check if namespace exists for the AI in the consolidated index."""
+    try:
+        client = get_pinecone_client()
+        index_name = get_pinecone_index_name()
+        
+        if not check_index_exists():
+            return False
+            
+        index = client.Index(index_name)
+        stats = index.describe_index_stats()
+        
+        # Check if this AI has a namespace in the stats
+        if hasattr(stats, 'namespaces') and stats.namespaces and ai_id in stats.namespaces:
+            return True
+        return False
+        
+    except Exception as e:
+        print(f"[Pinecone] Error checking namespace existence: {e}")
         return False
 
 
@@ -282,15 +310,15 @@ def append_documents_to_pinecone(ai_id: str, new_documents: List[Document]):
 
 
 def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
-    """Delete vectors by source URLs from Pinecone index."""
+    """Delete vectors by source URLs from Pinecone namespace."""
     try:
         client = get_pinecone_client()
-        index_name = get_pinecone_index_name(ai_id)
+        index_name = get_pinecone_index_name()
         
         existing_indexes = [index.name for index in client.list_indexes()]
         
         if index_name not in existing_indexes:
-            print(f"[Pinecone] Index {index_name} does not exist")
+            print(f"[Pinecone] Consolidated index {index_name} does not exist")
             return 0
             
         index = client.Index(index_name)
@@ -299,12 +327,12 @@ def delete_vectors_by_source(ai_id: str, source_urls: List[str]) -> int:
         for source_url in source_urls:
             print(f"[Pinecone] Deleting vectors with source: {source_url}")
             
-            # Delete vectors with specific source and ai_id
+            # Delete vectors with specific source in the AI's namespace
             delete_response = index.delete(
                 filter={
-                    "ai_id": ai_id,
                     "source": source_url
-                }
+                },
+                namespace=ai_id
             )
             
             print(f"[Pinecone] Deleted vectors for source: {source_url}")
