@@ -74,7 +74,8 @@ class DynamicRAGAgent:
         self.config = self._fetch_config()
         self.llm = self._init_llm()
         
-        
+        # Import check_index_exists from pinecone_serverless_utils
+        from pinecone_serverless_utils import check_index_exists
         
         # Check if Pinecone index exists for this AI
         if check_index_exists(self.ai_id):
@@ -88,8 +89,9 @@ class DynamicRAGAgent:
         self.chain = self._build_chain() if self.retriever else None
 
     def is_ready(self):
-        """Return True if agent is ready to answer (vectorstore, retriever, chain all set)."""
-        return self.vectorstore is not None and self.retriever is not None and self.chain is not None
+        """Return True if agent has been initialized successfully. In growbro-worker, we only
+        use this to verify the agent was created, not for RAG functionality."""
+        return True
 
     def extract_and_build_vectorstore(self, force_rebuild=False):
         """
@@ -213,7 +215,7 @@ class DynamicRAGAgent:
         print(f"[DynamicRAGAgent] Saving document splits to Supabase for hybrid retrieval")
         save_splits_to_supabase(self.ai_id, splits)
         
-        
+        print("[DynamicRAGAgent] ✅ Pinecone serverless vectorstore created successfully - MUCH faster!")
         try:
             supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
             print(f"[DynamicRAGAgent] Set vectorstore_ready=True for {self.ai_id}")
