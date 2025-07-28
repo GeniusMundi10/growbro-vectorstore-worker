@@ -1,8 +1,7 @@
 app = 'growbro-worker'  # Change to your unique Fly app name
 primary_region = 'lhr'
 
-# Add swap space for memory spikes during large document processing
-swap_size_mb = 2048
+
 
 [build]
 
@@ -14,14 +13,8 @@ swap_size_mb = 2048
   min_machines_running = 0  # Allow full shutdown when no signups
 
 [[vm]]
-  memory = '16gb'  # Scale memory with CPU count
+  memory = '8gb'  # Scale memory with CPU count
   cpu_kind = 'performance'
-  cpus = 2  # Double the processing power for parallel operations
-  memory_mb = 16384
+  cpus = 1  # Double the processing power for parallel operations
+  memory_mb = 8192
 
-[env]
-  # Python and numerical computation optimizations
-  PYTHONUNBUFFERED = "1"
-  OMP_NUM_THREADS = "2"  # Match CPU count
-  NUMEXPR_MAX_THREADS = "2"
-  TOKENIZERS_PARALLELISM = "true"
