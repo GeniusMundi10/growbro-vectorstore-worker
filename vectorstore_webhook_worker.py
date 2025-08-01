@@ -33,33 +33,41 @@ app = Flask(__name__)
 from flask_cors import CORS
 CORS(app, origins=["https://crm.growbro.ai"])
 
-@app.route("/trigger", methods=["POST"])
-def trigger_vectorstore():
+PROCESSING_IDS = set()
+
+@app.route("/create-vectorstore", methods=["POST"])
+def create_vectorstore():
+    """
+    Endpoint to create and build a new vectorstore for a user. Should be called only on user signup.
+    Expects JSON body with:
+      - ai_id (required): The AI/business ID for which to create the vectorstore
+      - session_cookie (optional): If needed for downstream auth
+    """
     data = request.json
-    # Supabase sends the updated row as 'record'
-    record = data.get("record", {})
-    ai_id = record.get("id")
-    vectorstore_ready = record.get("vectorstore_ready")
+    ai_id = data.get("ai_id")
+    session_cookie = data.get("session_cookie")
     if not ai_id:
         return jsonify({"status": "error", "message": "Missing ai_id"}), 400
 
-    # Only trigger if vectorstore_ready is False
-    if vectorstore_ready is not False:
-        return jsonify({"status": "ignored", "message": "No action needed"}), 200
+    # In-memory lock to prevent duplicate builds for same ai_id
+    if ai_id in PROCESSING_IDS:
+        return jsonify({"status": "ignored", "message": "Build already in progress"}), 200
+    PROCESSING_IDS.add(ai_id)
 
-    session_cookie = record.get("session_cookie")
     try:
         agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie)
-        agent.extract_and_build_vectorstore(force_rebuild=True)  # Always rebuild!
+        agent.extract_and_build_vectorstore(force_rebuild=True)
         if agent.is_ready():
             supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()
-            return jsonify({"status": "success", "message": f"Vectorstore rebuilt for {ai_id}"}), 200
+            return jsonify({"status": "success", "message": f"Vectorstore created for {ai_id}"}), 200
         else:
             return jsonify({"status": "error", "message": "Vectorstore not ready after build"}), 500
     except Exception as e:
         print("[ERROR]", e)
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        PROCESSING_IDS.discard(ai_id)
 
 @app.route("/add-files", methods=["POST"])
 def add_files():
