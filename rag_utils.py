@@ -196,7 +196,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=90)
                     resp.raise_for_status()
                     result = resp.json()
-                    for item in result.get('data', []):
+                    # v1 /scrape returns data as a single object, not an array
+                    item = result.get('data', {})
+                    if item:
                         content = item.get('markdown') or item.get('html') or ""
                         metadata = item.get('metadata', {})
                         # Ensure 'source' is always set for vector deletion
@@ -228,7 +230,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                             print(f"[Firecrawl Debug] REST non-deep HTTPError: {http_err} | Response: {error_text}")
                             raise
                         result = resp.json()
-                        for item in result.get('data', []):
+                        # v1 /scrape returns data as a single object, not an array
+                        item = result.get('data', {})
+                        if item:
                             content = item.get('markdown') or item.get('html') or ""
                             metadata = item.get('metadata', {})
                             if 'source' not in metadata:
