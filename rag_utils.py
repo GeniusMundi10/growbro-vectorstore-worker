@@ -191,9 +191,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     data = {
                         "url": url,
                         "formats": formats,
-                        "limit": limit,
+                        "timeout": 60000
                     }
-                    resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                    resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=90)
                     resp.raise_for_status()
                     result = resp.json()
                     for item in result.get('data', []):
@@ -217,12 +217,11 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         }
                         data = {
                             "url": url,
-                            "scrapeOptions": {
-                                "formats": formats
-                            }
+                            "formats": formats,
+                            "timeout": 60000
                         }
                         try:
-                            resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                            resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=90)
                             resp.raise_for_status()
                         except requests.exceptions.HTTPError as http_err:
                             error_text = http_err.response.text if http_err.response is not None else ""
