@@ -4,9 +4,8 @@ from rag_dynamic import DynamicRAGAgent
 from supabase_client import supabase, SUPABASE_URL, SUPABASE_KEY
 import tempfile
 import requests
-from langchain.docstore.document import Document
+from langchain_core.documents import Document
 from rag_utils import (
-    get_text_splitter,
     extract_website_text_with_firecrawl,
     extract_file_text
 )

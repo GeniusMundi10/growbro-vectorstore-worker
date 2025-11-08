@@ -5,16 +5,11 @@ Dynamic, multi-tenant RAG agent for serving multiple AIs/clients using rag_utils
 
 from supabase_client import supabase
 from rag_utils import (
-    generate_prompt_template,
-    create_chat_prompt_template,
     get_text_splitter,
     extract_website_text_with_firecrawl,
     extract_file_text,
-    create_conversational_retrieval_chain,
     aggregate_crawl_analytics
 )
-from langchain_openai import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
 import os
 
 def save_splits_to_supabase(ai_id: str, splits):

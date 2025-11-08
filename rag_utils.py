@@ -3,18 +3,12 @@ rag_utils.py
 Essential utility functions for growbro-worker vectorstore creation.
 """
 
-from typing import List
 import os
 import time
 import requests
 import mimetypes
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
 
 # Firecrawl SDK
 try:
@@ -255,36 +249,3 @@ def aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
         analytics["files_indexed"] = file_analytics.get("files_indexed", 0)
     
     return analytics
-
-def generate_prompt_template(company_info):
-    """
-    Generate a basic prompt template for the agent.
-    """
-    return f"""
-You are {company_info.get('bot_name', 'AI Assistant')} for {company_info.get('company_name', 'the company')}.
-
-Use the following context to answer the user's question:
-{{context}}
-
-Question: {{question}}
-Answer:
-"""
-
-def create_chat_prompt_template(company_info):
-    """
-    Create a ChatPromptTemplate for the conversational chain.
-    """
-    template = generate_prompt_template(company_info)
-    return ChatPromptTemplate.from_template(template)
-
-def create_conversational_retrieval_chain(llm, retriever, prompt_template, memory):
-    """
-    Create a conversational retrieval chain.
-    """
-    return ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        memory=memory,
-        return_source_documents=True,
-        verbose=False
-    )
