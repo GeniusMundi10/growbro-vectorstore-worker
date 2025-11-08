@@ -124,8 +124,13 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         "limit": limit,
                         "crawlEntireDomain": True
                     }
-                    resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
-                    resp.raise_for_status()
+                    try:
+                        resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
+                        resp.raise_for_status()
+                    except requests.exceptions.HTTPError as http_err:
+                        error_text = http_err.response.text if http_err.response is not None else ""
+                        print(f"[Firecrawl Debug] REST deep crawl HTTPError: {http_err} | Response: {error_text}")
+                        raise
                     result = resp.json()
                     for item in result.get('data', []):
                         content = item.get('markdown') or item.get('html') or ""
@@ -215,8 +220,13 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                             "formats": formats,
                             "limit": 1
                         }
-                        resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
-                        resp.raise_for_status()
+                        try:
+                            resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                            resp.raise_for_status()
+                        except requests.exceptions.HTTPError as http_err:
+                            error_text = http_err.response.text if http_err.response is not None else ""
+                            print(f"[Firecrawl Debug] REST non-deep HTTPError: {http_err} | Response: {error_text}")
+                            raise
                         result = resp.json()
                         for item in result.get('data', []):
                             content = item.get('markdown') or item.get('html') or ""
