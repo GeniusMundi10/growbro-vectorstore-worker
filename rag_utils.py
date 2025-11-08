@@ -112,37 +112,62 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     urls_crawled.append(page_url)
             else:
                 print("[Firecrawl Debug] Path: SDK app.crawl_url (no session_cookie)")
-                # Use Firecrawl SDK for public crawling
                 if FirecrawlApp is None or ScrapeOptions is None:
-                    raise ImportError("Firecrawl SDK is not installed.")
-                app = FirecrawlApp(api_key=api_key)
-                crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))
-                print(f"[Firecrawl Debug] Full crawl_result: {crawl_result}")
-                if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
-                    status = crawl_result
+                    print("[Firecrawl Debug] SDK unavailable, using REST /v1/crawl instead")
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    data = {
+                        "url": url,
+                        "formats": formats,
+                        "limit": limit,
+                        "crawlEntireDomain": True
+                    }
+                    resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
+                    resp.raise_for_status()
+                    result = resp.json()
+                    for item in result.get('data', []):
+                        content = item.get('markdown') or item.get('html') or ""
+                        metadata = item.get('metadata', {})
+                        if 'source' not in metadata:
+                            computed_source = metadata.get('sourceURL') or metadata.get('url') or url
+                            print(f"[Firecrawl Debug] Computed 'source' for REST deep crawl Document: {computed_source}")
+                            metadata['source'] = computed_source
+                        print(f"[Firecrawl Debug] Final metadata for REST deep crawl Document: {metadata}")
+                        all_documents.append(Document(page_content=content, metadata=metadata))
+                        page_url = metadata.get('url') or url
+                        urls_crawled.append(page_url)
                 else:
-                    crawl_id = crawl_result.id
-                    while True:
-                        status = app.check_crawl_status(crawl_id)
-                        print(f"[Firecrawl Debug] Polling crawl status: {status}")
-                        if status.status == 'completed':
-                            break
-                        elif status.status == 'failed':
-                            raise RuntimeError(f"Firecrawl crawl failed: {status}")
-                        time.sleep(3)
-                print(f"[Firecrawl Debug] Final crawl status: {status}")
-                for item in status.data:
-                    content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
-                    metadata = getattr(item, 'metadata', {})
-                    # Ensure 'source' is always set for vector deletion
-                    if 'source' not in metadata:
-                        computed_source = metadata.get('sourceURL') or metadata.get('url') or url
-                        print(f"[Firecrawl Debug] Computed 'source' for deep SDK Document: {computed_source}")
-                        metadata['source'] = computed_source
-                    print(f"[Firecrawl Debug] Final metadata for deep SDK Document: {metadata}")
-                    all_documents.append(Document(page_content=content, metadata=metadata))
-                    page_url = metadata.get('url') or url
-                    urls_crawled.append(page_url)
+                    # Use Firecrawl SDK for public crawling
+                    app = FirecrawlApp(api_key=api_key)
+                    crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))
+                    print(f"[Firecrawl Debug] Full crawl_result: {crawl_result}")
+                    if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
+                        status = crawl_result
+                    else:
+                        crawl_id = crawl_result.id
+                        while True:
+                            status = app.check_crawl_status(crawl_id)
+                            print(f"[Firecrawl Debug] Polling crawl status: {status}")
+                            if status.status == 'completed':
+                                break
+                            elif status.status == 'failed':
+                                raise RuntimeError(f"Firecrawl crawl failed: {status}")
+                            time.sleep(3)
+                    print(f"[Firecrawl Debug] Final crawl status: {status}")
+                    for item in status.data:
+                        content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
+                        metadata = getattr(item, 'metadata', {})
+                        # Ensure 'source' is always set for vector deletion
+                        if 'source' not in metadata:
+                            computed_source = metadata.get('sourceURL') or metadata.get('url') or url
+                            print(f"[Firecrawl Debug] Computed 'source' for deep SDK Document: {computed_source}")
+                            metadata['source'] = computed_source
+                        print(f"[Firecrawl Debug] Final metadata for deep SDK Document: {metadata}")
+                        all_documents.append(Document(page_content=content, metadata=metadata))
+                        page_url = metadata.get('url') or url
+                        urls_crawled.append(page_url)
         except Exception as e:
             print(f"[Firecrawl] Error deep crawling {url}: {e}. Please Contact Growbro")
     elif not deep_crawl:
@@ -179,34 +204,58 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         page_url = metadata.get('url') or url
                         urls_crawled.append(page_url)
                 else:
-                    # Use Firecrawl SDK for public crawling
                     if FirecrawlApp is None or ScrapeOptions is None:
-                        raise ImportError("Firecrawl SDK is not installed.")
-                    app = FirecrawlApp(api_key=api_key)
-                    crawl_result = app.crawl_url(url, limit=1, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
-                    if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
-                        status = crawl_result
+                        print("[Firecrawl Debug] SDK unavailable, using REST /v1/scrape instead")
+                        headers = {
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        data = {
+                            "url": url,
+                            "formats": formats,
+                            "limit": 1
+                        }
+                        resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=data, timeout=60)
+                        resp.raise_for_status()
+                        result = resp.json()
+                        for item in result.get('data', []):
+                            content = item.get('markdown') or item.get('html') or ""
+                            metadata = item.get('metadata', {})
+                            if 'source' not in metadata:
+                                computed_source = metadata.get('sourceURL') or metadata.get('url') or url
+                                print(f"[Firecrawl Debug] Computed 'source' for REST non-deep Document: {computed_source}")
+                                metadata['source'] = computed_source
+                            print(f"[Firecrawl Debug] Final metadata for REST non-deep Document: {metadata}")
+                            all_documents.append(Document(page_content=content, metadata=metadata))
+                            page_url = metadata.get('url') or url
+                            urls_crawled.append(page_url)
                     else:
-                        crawl_id = crawl_result.id
-                        while True:
-                            status = app.check_crawl_status(crawl_id)
-                            if status.status == 'completed':
-                                break
-                            elif status.status == 'failed':
-                                raise RuntimeError(f"Firecrawl crawl failed: {status}")
-                            time.sleep(3)
-                    for item in status.data:
-                        content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
-                        metadata = getattr(item, 'metadata', {})
-                        # Ensure 'source' is always set for vector deletion
-                        if 'source' not in metadata:
-                            computed_source = metadata.get('sourceURL') or metadata.get('url') or url
-                            print(f"[Firecrawl Debug] Computed 'source' for non-deep SDK Document: {computed_source}")
-                            metadata['source'] = computed_source
-                        print(f"[Firecrawl Debug] Final metadata for non-deep SDK Document: {metadata}")
-                        all_documents.append(Document(page_content=content, metadata=metadata))
-                        page_url = metadata.get('url') or url
-                        urls_crawled.append(page_url)
+                        # Use Firecrawl SDK for public crawling
+                        app = FirecrawlApp(api_key=api_key)
+                        crawl_result = app.crawl_url(url, limit=1, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
+                        if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
+                            status = crawl_result
+                        else:
+                            crawl_id = crawl_result.id
+                            while True:
+                                status = app.check_crawl_status(crawl_id)
+                                if status.status == 'completed':
+                                    break
+                                elif status.status == 'failed':
+                                    raise RuntimeError(f"Firecrawl crawl failed: {status}")
+                                time.sleep(3)
+                        for item in status.data:
+                            content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
+                            metadata = getattr(item, 'metadata', {})
+                            # Ensure 'source' is always set for vector deletion
+                            if 'source' not in metadata:
+                                computed_source = metadata.get('sourceURL') or metadata.get('url') or url
+                                print(f"[Firecrawl Debug] Computed 'source' for non-deep SDK Document: {computed_source}")
+                                metadata['source'] = computed_source
+                            print(f"[Firecrawl Debug] Final metadata for non-deep SDK Document: {metadata}")
+                            all_documents.append(Document(page_content=content, metadata=metadata))
+                            page_url = metadata.get('url') or url
+                            urls_crawled.append(page_url)
             except Exception as e:
                 print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
                 # Fallback for this URL only
