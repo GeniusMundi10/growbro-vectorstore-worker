@@ -88,10 +88,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 }
                 data = {
                     "url": url,
-                    "formats": formats,
+                    "scrapeOptions": {"formats": formats},
                     "limit": limit,
-                    "crawlEntireDomain": True  # Enable crawling of entire domain to find missed links
-                    # No maxDepth parameter for deep crawl
+                    "crawlEntireDomain": True
                 }
                 print("[Firecrawl Debug] Using /v1/crawl endpoint for deep crawl")
                 resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
@@ -120,7 +119,7 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     }
                     data = {
                         "url": url,
-                        "formats": formats,
+                        "scrapeOptions": {"formats": formats},
                         "limit": limit,
                         "crawlEntireDomain": True
                     }
