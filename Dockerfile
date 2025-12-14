@@ -25,5 +25,5 @@ COPY pinecone_serverless_utils.py .
 # Expose the port your Flask app runs on
 EXPOSE 8001
 
-# Run the worker
-CMD ["python", "vectorstore_webhook_worker.py"]
+# Run the worker with Gunicorn (Production Server)
+CMD ["gunicorn", "--bind", "0.0.0.0:8001", "--workers", "4", "--timeout", "240", "vectorstore_webhook_worker:app"]
