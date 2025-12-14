@@ -95,7 +95,32 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 print("[Firecrawl Debug] Using /v1/crawl endpoint for deep crawl")
                 resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
                 resp.raise_for_status()
-                result = resp.json()
+                init_result = resp.json()
+                job_id = init_result.get("id") or init_result.get("jobId")
+                
+                if not job_id:
+                     # If for some reason we got data immediately
+                     result = init_result
+                else:
+                     # Poll for completion
+                     print(f"[Firecrawl Debug] Polling crawl job {job_id} with session cookie...")
+                     while True:
+                         status_resp = requests.get(f"https://api.firecrawl.dev/v1/crawl/{job_id}", headers=headers, timeout=30)
+                         status_resp.raise_for_status()
+                         status_data = status_resp.json()
+                         
+                         status = status_data.get("status")
+                         print(f"[Firecrawl Debug] Job {job_id} status: {status}")
+                         
+                         if status == "completed":
+                             result = status_data
+                             break
+                         elif status == "failed":
+                             print(f"[Firecrawl Debug] Job failed details: {status_data}")
+                             raise RuntimeError(f"Firecrawl crawl job {job_id} failed")
+                         
+                         time.sleep(3)
+
                 for item in result.get('data', []):
                     content = item.get('markdown') or item.get('html') or ""
                     metadata = item.get('metadata', {})
@@ -126,11 +151,37 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     try:
                         resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
                         resp.raise_for_status()
+                        init_result = resp.json()
+                        job_id = init_result.get("id") or init_result.get("jobId")
+                        if not job_id:
+                             # If for some reason we got data immediately (unlikely for crawl)
+                             result = init_result
+                        else:
+                             # Poll for completion
+                             print(f"[Firecrawl Debug] Cleanup Polling crawl job {job_id}...")
+                             while True:
+                                 status_resp = requests.get(f"https://api.firecrawl.dev/v1/crawl/{job_id}", headers=headers, timeout=30)
+                                 status_resp.raise_for_status()
+                                 status_data = status_resp.json()
+                                 
+                                 status = status_data.get("status")
+                                 print(f"[Firecrawl Debug] Job {job_id} status: {status}")
+                                 
+                                 if status == "completed":
+                                     result = status_data
+                                     break
+                                 elif status == "failed":
+                                     print(f"[Firecrawl Debug] Job failed details: {status_data}")
+                                     raise RuntimeError(f"Firecrawl crawl job {job_id} failed")
+                                 
+                                 time.sleep(3)
+
                     except requests.exceptions.HTTPError as http_err:
                         error_text = http_err.response.text if http_err.response is not None else ""
                         print(f"[Firecrawl Debug] REST deep crawl HTTPError: {http_err} | Response: {error_text}")
                         raise
-                    result = resp.json()
+                    
+                    # Process results from the completed job
                     for item in result.get('data', []):
                         content = item.get('markdown') or item.get('html') or ""
                         metadata = item.get('metadata', {})
