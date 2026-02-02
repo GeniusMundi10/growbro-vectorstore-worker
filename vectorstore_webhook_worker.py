@@ -205,9 +205,12 @@ def add_files():
                 # Calculate new count (add newly processed files)
                 new_files_indexed = current_files_indexed + file_stats["successfully_processed"]
                 
-                # Update business_info with new count
-                print(f"[add_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
-                supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
+                # Update business_info with new count and set vectorstore_ready to True
+                print(f"[add_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed} and setting vectorstore_ready=True")
+                supabase.table("business_info").update({
+                    "files_indexed": new_files_indexed,
+                    "vectorstore_ready": True
+                }).eq("id", ai_id).execute()
                 
                 # Update analytics for response
                 file_stats["total_files_indexed"] = new_files_indexed
@@ -300,12 +303,13 @@ def add_links():
             append_documents_to_pinecone(ai_id, new_docs)
             print(f"[add_links] Successfully added documents to Pinecone index")
             
-            # Update business_info with new urls_crawled list and total_pages_crawled
-            print(f"[add_links] Updating urls_crawled and total_pages_crawled in DB for {ai_id}")
+            # Update business_info with new urls_crawled list, total_pages_crawled, and set vectorstore_ready to True
+            print(f"[add_links] Updating urls_crawled, total_pages_crawled, and setting vectorstore_ready=True in DB for {ai_id}")
             new_urls_list = list(set(existing_urls + actually_crawled_urls))  # Remove duplicates
             supabase.table("business_info").update({
                 "urls_crawled": new_urls_list,
-                "total_pages_crawled": len(new_urls_list)
+                "total_pages_crawled": len(new_urls_list),
+                "vectorstore_ready": True
             }).eq("id", ai_id).execute()
             
             return jsonify({
