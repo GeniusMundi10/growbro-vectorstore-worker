@@ -294,32 +294,55 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                             page_url = metadata.get('url') or url
                             urls_crawled.append(page_url)
                     else:
-                        # Use Firecrawl SDK for public crawling
+                        # Use Firecrawl SDK for public scraping (single page code path)
+                        # We use scrape_url instead of crawl_url for single pages as it's faster and more reliable
                         app = FirecrawlApp(api_key=api_key)
-                        crawl_result = app.crawl_url(url, limit=1, scrape_options=ScrapeOptions(formats=formats))  # Only crawl this page, do not follow links
-                        if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
-                            status = crawl_result
-                        else:
-                            crawl_id = crawl_result.id
-                            while True:
-                                status = app.check_crawl_status(crawl_id)
-                                if status.status == 'completed':
-                                    break
-                                elif status.status == 'failed':
-                                    raise RuntimeError(f"Firecrawl crawl failed: {status}")
-                                time.sleep(3)
-                        for item in status.data:
-                            content = getattr(item, 'markdown', None) or getattr(item, 'html', None) or ""
-                            metadata = getattr(item, 'metadata', {})
+                        
+                        print(f"[Firecrawl] Scraping single URL via SDK: {url}")
+                        try:
+                            # scrape_url returns a dictionary with 'markdown', 'metadata', etc. directly
+                            # or a response object depending on SDK version. 
+                            # We'll handle the standard dictionary response.
+                            scrape_result = app.scrape_url(url, params={'formats': formats})
+                            
+                            # Log the raw result keys for debugging if needed
+                            # print(f"[Firecrawl Debug] Scrape result keys: {scrape_result.keys()}")
+                            
+                            if not scrape_result:
+                                print(f"[Firecrawl] Warning: Empty result from scrape_url for {url}")
+                                continue
+                                
+                            # Uniform handling: scrape_result might be the data dict itself or contain 'data'
+                            # The SDK v1 usually returns the data object directly
+                            item = scrape_result
+                            
+                            content = item.get('markdown') or item.get('html') or ""
+                            metadata = item.get('metadata', {})
+                            
+                            # --- ENHANCED LOGGING ---
+                            content_len = len(content)
+                            print(f"[Firecrawl] Content Preview for {url}:")
+                            print(f"Content Length: {content_len} characters")
+                            if content_len > 0:
+                                print(f"Snippet: {content[:500]}...")
+                            else:
+                                print("Snippet: [EMPTY CONTENT]")
+                            print(f"Metadata: {metadata}")
+                            # ------------------------
+
                             # Ensure 'source' is always set for vector deletion
                             if 'source' not in metadata:
                                 computed_source = metadata.get('sourceURL') or metadata.get('url') or url
-                                print(f"[Firecrawl Debug] Computed 'source' for non-deep SDK Document: {computed_source}")
+                                print(f"[Firecrawl Debug] Computed 'source' for SDK Scraped Document: {computed_source}")
                                 metadata['source'] = computed_source
-                            print(f"[Firecrawl Debug] Final metadata for non-deep SDK Document: {metadata}")
+                                
                             all_documents.append(Document(page_content=content, metadata=metadata))
                             page_url = metadata.get('url') or url
                             urls_crawled.append(page_url)
+                            
+                        except Exception as e:
+                            print(f"[Firecrawl] SDK scrape_url failed: {e}")
+                            raise e
             except Exception as e:
                 print(f"[Firecrawl] Error crawling {url}: {e}. Please Contact Growbro")
                 # Fallback for this URL only
