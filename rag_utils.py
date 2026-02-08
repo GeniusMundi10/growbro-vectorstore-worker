@@ -289,6 +289,18 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                                 computed_source = metadata.get('sourceURL') or metadata.get('url') or url
                                 print(f"[Firecrawl Debug] Computed 'source' for REST non-deep Document: {computed_source}")
                                 metadata['source'] = computed_source
+                                
+                            # --- ENHANCED LOGGING (REST Fallback) ---
+                            content_len = len(content)
+                            print(f"[Firecrawl] Content Preview for {url} (REST):")
+                            print(f"Content Length: {content_len} characters")
+                            if content_len > 0:
+                                print(f"Snippet: {content[:500]}...")
+                            else:
+                                print("Snippet: [EMPTY CONTENT]")
+                            print(f"Metadata: {metadata}")
+                            # ------------------------
+
                             print(f"[Firecrawl Debug] Final metadata for REST non-deep Document: {metadata}")
                             all_documents.append(Document(page_content=content, metadata=metadata))
                             page_url = metadata.get('url') or url
