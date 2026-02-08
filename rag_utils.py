@@ -295,9 +295,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                             print(f"[Firecrawl] Content Preview for {url} (REST):")
                             print(f"Content Length: {content_len} characters")
                             if content_len > 0:
-                                print(f"Snippet: {content[:500]}...")
+                                print(f"FULL CONTENT: {content}")
                             else:
-                                print("Snippet: [EMPTY CONTENT]")
+                                print("FULL CONTENT: [EMPTY CONTENT]")
                             print(f"Metadata: {metadata}")
                             # ------------------------
 
@@ -336,9 +336,9 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                             print(f"[Firecrawl] Content Preview for {url}:")
                             print(f"Content Length: {content_len} characters")
                             if content_len > 0:
-                                print(f"Snippet: {content[:500]}...")
+                                print(f"FULL CONTENT: {content}")
                             else:
-                                print("Snippet: [EMPTY CONTENT]")
+                                print("FULL CONTENT: [EMPTY CONTENT]")
                             print(f"Metadata: {metadata}")
                             # ------------------------
 
