@@ -7,7 +7,8 @@ import requests
 from langchain_core.documents import Document
 from rag_utils import (
     extract_website_text_with_firecrawl,
-    extract_file_text
+    extract_file_text,
+    get_text_splitter
 )
 from pinecone_serverless_utils import (
     check_index_exists,
@@ -180,10 +181,14 @@ def add_files():
                 'analytics': file_stats
             }), 400
         
+        # Split documents to avoid Pinecone metadata truncation (1000 char limit)
+        text_splitter = get_text_splitter()
+        splits = text_splitter.split_documents(new_docs)
+        
         # Add new documents to Pinecone index
-        print(f"[add_files] Adding {len(new_docs)} new documents to Pinecone index")
+        print(f"[add_files] Adding {len(splits)} chunks from {len(new_docs)} new files to Pinecone index")
         try:
-            append_documents_to_pinecone(ai_id, new_docs)
+            append_documents_to_pinecone(ai_id, splits)
             print(f"[add_files] Successfully added documents to Pinecone index")
         except Exception as e:
             print(f"[add_files] Error adding documents to Pinecone: {e}")
@@ -298,9 +303,13 @@ def add_links():
                     'message': 'Failed to extract content from new URLs'
                 }), 400
             
+            # Split documents to avoid Pinecone metadata truncation (1000 char limit)
+            text_splitter = get_text_splitter()
+            splits = text_splitter.split_documents(new_docs)
+            
             # Add new documents to Pinecone index
-            print(f"[add_links] Adding {len(new_docs)} new documents to Pinecone index")
-            append_documents_to_pinecone(ai_id, new_docs)
+            print(f"[add_links] Adding {len(splits)} chunks from {len(new_docs)} new URLs to Pinecone index")
+            append_documents_to_pinecone(ai_id, splits)
             print(f"[add_links] Successfully added documents to Pinecone index")
             
             # Update business_info with new urls_crawled list, total_pages_crawled, and set vectorstore_ready to True
