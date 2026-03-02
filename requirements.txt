@@ -9,4 +9,5 @@ firecrawl-py
 gunicorn
 PyPDF2
 python-docx
+python-pptx
 pinecone

@@ -19,7 +19,7 @@ except ImportError:
 
 def extract_file_text(file_path):
     """
-    Extract text from a file (PDF, TXT, DOCX, etc.).
+    Extract text from a file (PDF, TXT, DOCX, CSV, PPTX, etc.).
     Returns a string or None if extraction fails.
     """
     if not os.path.exists(file_path):
@@ -53,6 +53,58 @@ def extract_file_text(file_path):
                 return "\n".join([p.text for p in doc.paragraphs])
             except Exception as e:
                 print(f"[extract_file_text] DOCX extraction failed: {e}")
+                return None
+        elif file_path.lower().endswith(".csv"):
+            import csv
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    rows = list(reader)
+                if not rows:
+                    print(f"[extract_file_text] CSV file is empty: {file_path}")
+                    return None
+                headers = rows[0]
+                lines = []
+                for row in rows[1:]:
+                    # Convert each row to "Header1: value1 | Header2: value2 | ..."
+                    parts = []
+                    for i, val in enumerate(row):
+                        col_name = headers[i] if i < len(headers) else f"Column{i+1}"
+                        parts.append(f"{col_name}: {val}")
+                    lines.append(" | ".join(parts))
+                text = "\n".join(lines)
+                print(f"[extract_file_text] CSV extracted {len(rows)-1} rows from {file_path}")
+                return text
+            except Exception as e:
+                print(f"[extract_file_text] CSV extraction failed: {e}")
+                return None
+        elif file_path.lower().endswith((".pptx", ".ppt")):
+            try:
+                from pptx import Presentation
+            except ImportError:
+                print("[extract_file_text] python-pptx not installed. Skipping PPTX extraction.")
+                return None
+            try:
+                prs = Presentation(file_path)
+                slides_text = []
+                for i, slide in enumerate(prs.slides, 1):
+                    slide_parts = [f"Slide {i}:"]
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            text = shape.text_frame.text.strip()
+                            if text:
+                                slide_parts.append(text)
+                    # Extract speaker notes
+                    if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                        notes = slide.notes_slide.notes_text_frame.text.strip()
+                        if notes:
+                            slide_parts.append(f"Notes: {notes}")
+                    slides_text.append("\n".join(slide_parts))
+                text = "\n\n".join(slides_text)
+                print(f"[extract_file_text] PPTX extracted {len(prs.slides)} slides from {file_path}")
+                return text
+            except Exception as e:
+                print(f"[extract_file_text] PPTX extraction failed: {e}")
                 return None
         else:
             print(f"[extract_file_text] Unsupported file type: {file_path}")
