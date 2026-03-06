@@ -449,6 +449,60 @@ def remove_files():
         return jsonify({"status": "error", "message": f"Error removing files: {str(e)}"}), 500
 
 
+@app.route("/query", methods=["POST"])
+def query_vectorstore():
+    """
+    Query the Pinecone vectorstore for relevant content.
+    Used by the CRM Creatives Studio to fetch real company context from the knowledge base.
+
+    Required params:
+    - ai_id: The AI ID to query
+    - query: The search query text
+    - top_k (optional): Number of results to return (default: 5, max: 10)
+
+    Returns:
+    - results: List of {text, source, score} objects
+    """
+    try:
+        data = request.get_json()
+        ai_id = data.get("ai_id")
+        query_text = data.get("query", "")
+        top_k = min(int(data.get("top_k", 5)), 10)  # Cap at 10
+
+        if not ai_id or not query_text:
+            return jsonify({
+                "status": "error",
+                "message": "Missing required parameters: ai_id and/or query"
+            }), 400
+
+        print(f"[query] Querying vectorstore for AI {ai_id}: '{query_text[:80]}...' (top_k={top_k})")
+
+        # Check if index and namespace exist
+        if not check_index_exists():
+            print(f"[query] No consolidated Pinecone index found")
+            return jsonify({"status": "success", "results": []})
+
+        if not check_namespace_exists(ai_id):
+            print(f"[query] No namespace found for AI {ai_id}")
+            return jsonify({"status": "success", "results": []})
+
+        # Query Pinecone using the existing utility
+        from pinecone_serverless_utils import query_pinecone_with_lightweight_embeddings
+        results = query_pinecone_with_lightweight_embeddings(ai_id, query_text, top_k=top_k)
+
+        print(f"[query] Retrieved {len(results)} results for AI {ai_id}")
+
+        return jsonify({
+            "status": "success",
+            "results": results
+        })
+
+    except Exception as e:
+        print(f"[query] Error: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8001)
 
