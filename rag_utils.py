@@ -113,9 +113,10 @@ def extract_file_text(file_path):
         print(f"[extract_file_text] Extraction error: {e}")
         return None
 
-def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=30, return_analytics=False, session_cookie=None, deep_crawl=False):
+def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=None, formats=['markdown'], limit=None, return_analytics=False, session_cookie=None, deep_crawl=False):
     """
     Extracts website text using Firecrawl. Falls back to generic_extract_website_text if Firecrawl fails or is unavailable.
+    If limit is None, omit it and let Firecrawl use its documented default crawl size.
     Returns: list of LangChain Document objects
     If return_analytics=True, returns (documents, analytics_dict) where analytics_dict has keys 'pages_crawled', 'urls_crawled'.
     """
@@ -141,9 +142,10 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 data = {
                     "url": url,
                     "scrapeOptions": {"formats": formats},
-                    "limit": limit,
                     "crawlEntireDomain": True
                 }
+                if limit is not None:
+                    data["limit"] = limit
                 print("[Firecrawl Debug] Using /v1/crawl endpoint for deep crawl")
                 resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
                 resp.raise_for_status()
@@ -197,9 +199,10 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                     data = {
                         "url": url,
                         "scrapeOptions": {"formats": formats},
-                        "limit": limit,
                         "crawlEntireDomain": True
                     }
+                    if limit is not None:
+                        data["limit"] = limit
                     try:
                         resp = requests.post("https://api.firecrawl.dev/v1/crawl", headers=headers, json=data, timeout=60)
                         resp.raise_for_status()
@@ -248,7 +251,12 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                 else:
                     # Use Firecrawl SDK for public crawling
                     app = FirecrawlApp(api_key=api_key)
-                    crawl_result = app.crawl_url(url, limit=limit, scrape_options=ScrapeOptions(formats=formats))
+                    crawl_kwargs = {
+                        "scrape_options": ScrapeOptions(formats=formats)
+                    }
+                    if limit is not None:
+                        crawl_kwargs["limit"] = limit
+                    crawl_result = app.crawl_url(url, **crawl_kwargs)
                     print(f"[Firecrawl Debug] Full crawl_result: {crawl_result}")
                     if hasattr(crawl_result, 'status') and crawl_result.status == 'completed':
                         status = crawl_result
