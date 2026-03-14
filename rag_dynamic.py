@@ -3,7 +3,7 @@ rag_dynamic.py
 Dynamic, multi-tenant RAG agent for serving multiple AIs/clients using rag_utils.py and Supabase.
 """
 
-from supabase_client import supabase
+from supabase_client import supabase, grochurch_supabase
 from rag_utils import (
     get_text_splitter,
     extract_website_text_with_firecrawl,
@@ -57,9 +57,15 @@ class DynamicRAGAgent:
     Only use get_response() for answering and extract_and_build_vectorstore() for building vectorstore.
     All other methods are internal.
     """
-    def __init__(self, ai_id, memory=None, auto_build_vectorstore=False, session_cookie=None):
+    def __init__(self, ai_id, memory=None, auto_build_vectorstore=False, session_cookie=None, project="growbro"):
         self.session_cookie = session_cookie
         self.ai_id = ai_id
+        self.project = project
+        
+        if self.project == "grochurch" and grochurch_supabase:
+            self.db_client = grochurch_supabase
+        else:
+            self.db_client = supabase
         
         self.config = self._fetch_config()
         
@@ -129,7 +135,7 @@ class DynamicRAGAgent:
 
         # 2. ai_links (optional)
         try:
-            ai_links_res = supabase.table("ai_website").select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
+            ai_links_res = self.db_client.table("ai_website").select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
             link_urls = [row["url"] for row in (ai_links_res.data or []) if row.get("url")]
             if link_urls:
                 print(f"[DynamicRAGAgent] Extracting text for ai_links URLs: {link_urls}")
@@ -144,7 +150,9 @@ class DynamicRAGAgent:
         # 3. ai_file (optional, use 'url' to download and extract text)
         import requests
         try:
-            ai_files_res = supabase.table("ai_file").select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
+            # Different table names for GroChurch
+            table_name = "ai_files" if self.project == "grochurch" else "ai_file"
+            ai_files_res = self.db_client.table(table_name).select("*").eq("user_id", self.config["user_id"]).eq("ai_id", self.ai_id).execute()
             file_rows = ai_files_res.data or []
             for file_row in file_rows:
                 file_url = file_row.get("url")
@@ -199,14 +207,14 @@ class DynamicRAGAgent:
         
         print("[DynamicRAGAgent] ✅ Pinecone serverless vectorstore created successfully - MUCH faster!")
         try:
-            supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
+            self.db_client.table("business_info").update({"vectorstore_ready": True}).eq("id", self.ai_id).execute()
             print(f"[DynamicRAGAgent] Set vectorstore_ready=True for {self.ai_id}")
         except Exception as e:
             print(f"[DynamicRAGAgent] Failed to set vectorstore_ready: {e}")
         # Now update analytics
         analytics = aggregate_crawl_analytics(website_analytics, link_analytics, file_analytics)
         try:
-            supabase.table("business_info").update({
+            self.db_client.table("business_info").update({
                 "total_pages_crawled": analytics['pages_crawled'],
                 "urls_crawled": analytics['urls_crawled'],
                 "files_indexed": analytics['files_indexed']
@@ -216,7 +224,7 @@ class DynamicRAGAgent:
             print(f"[DynamicRAGAgent] Failed to save crawl analytics: {e}")
 
     def _fetch_config(self):
-        res = supabase.table("business_info").select("*").eq("id", self.ai_id).execute()
+        res = self.db_client.table("business_info").select("*").eq("id", self.ai_id).execute()
         if not res.data or len(res.data) == 0:
             raise ValueError(f"No config found for ai_id={self.ai_id}")
         return res.data[0]

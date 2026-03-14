@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from rag_dynamic import DynamicRAGAgent
 # Import supabase client and credentials from the centralized module
-from supabase_client import supabase, SUPABASE_URL, SUPABASE_KEY
+from supabase_client import supabase, grochurch_supabase
 import tempfile
 import requests
 from langchain_core.documents import Document
@@ -46,8 +46,7 @@ def create_vectorstore():
     data = request.json
     ai_id = data.get("ai_id")
     session_cookie = data.get("session_cookie")
-    if not ai_id:
-        return jsonify({"status": "error", "message": "Missing ai_id"}), 400
+    project = data.get("project", "growbro")
 
     # In-memory lock to prevent duplicate builds for same ai_id
     if ai_id in PROCESSING_IDS:
@@ -55,10 +54,11 @@ def create_vectorstore():
     PROCESSING_IDS.add(ai_id)
 
     try:
-        agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie)
+        agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie, project=project)
         agent.extract_and_build_vectorstore(force_rebuild=True)
         if agent.is_ready():
-            supabase.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()
+            db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
+            db_client.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()
             return jsonify({"status": "success", "message": f"Vectorstore created for {ai_id}"}), 200
         else:
             return jsonify({"status": "error", "message": "Vectorstore not ready after build"}), 500
@@ -89,14 +89,17 @@ def add_files():
         data = request.json
         ai_id = data.get("ai_id")
         file_urls = data.get("file_urls", [])
+        project = data.get("project", "growbro")
+        db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
         
         if not ai_id or not file_urls:
             return jsonify({"status": "error", "message": "Missing ai_id or file_urls"}), 400
             
-        print(f"[add_files] Processing {len(file_urls)} new files for AI {ai_id}")
+        print(f"[add_files] Processing {len(file_urls)} new files for AI {ai_id} (Project: {project})")
         
         # Fetch existing files from DB to avoid duplicates
-        res = supabase.table("ai_file").select("url").eq("ai_id", ai_id).execute()
+        table_name = "ai_files" if project == "grochurch" else "ai_file"
+        res = db_client.table(table_name).select("url").eq("ai_id", ai_id).execute()
         existing_files = [item.get("url") for item in res.data] if res.data else []
         
         # Filter out any files that are already in the vectorstore
@@ -200,7 +203,7 @@ def add_files():
         # Update files_indexed count in business_info
         try:
             # First get current business_info to preserve other analytics
-            business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+            business_info_res = db_client.table("business_info").select("*").eq("id", ai_id).single().execute()
             business_info = business_info_res.data
             
             if business_info:
@@ -212,7 +215,7 @@ def add_files():
                 
                 # Update business_info with new count and set vectorstore_ready to True
                 print(f"[add_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed} and setting vectorstore_ready=True")
-                supabase.table("business_info").update({
+                db_client.table("business_info").update({
                     "files_indexed": new_files_indexed,
                     "vectorstore_ready": True
                 }).eq("id", ai_id).execute()
@@ -240,6 +243,8 @@ def add_links():
     data = request.get_json()
     ai_id = data.get('ai_id')
     new_urls = data.get('new_urls', [])
+    project = data.get("project", "growbro")
+    db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
     
     if not ai_id or not new_urls:
         return jsonify({
@@ -247,12 +252,12 @@ def add_links():
             'message': 'Missing required parameters: ai_id and/or new_urls'
         }), 400
     
-    print(f"[add_links] Adding {len(new_urls)} new URLs for {ai_id}")
+    print(f"[add_links] Adding {len(new_urls)} new URLs for {ai_id} (Project: {project})")
     
     # Get business info from Supabase to get existing URLs
     try:
         print(f"[add_links] Fetching business info for {ai_id}")
-        res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+        res = db_client.table("business_info").select("*").eq("id", ai_id).single().execute()
         business_info = res.data
         if not business_info:
             print(f"[add_links] No business info found for {ai_id}")
@@ -315,7 +320,7 @@ def add_links():
             # Update business_info with new urls_crawled list, total_pages_crawled, and set vectorstore_ready to True
             print(f"[add_links] Updating urls_crawled, total_pages_crawled, and setting vectorstore_ready=True in DB for {ai_id}")
             new_urls_list = list(set(existing_urls + actually_crawled_urls))  # Remove duplicates
-            supabase.table("business_info").update({
+            db_client.table("business_info").update({
                 "urls_crawled": new_urls_list,
                 "total_pages_crawled": len(new_urls_list),
                 "vectorstore_ready": True
@@ -347,11 +352,14 @@ def remove_urls():
     data = request.json
     ai_id = data.get("ai_id")
     urls_to_remove = data.get("urls_to_remove", [])
+    project = data.get("project", "growbro")
+    db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
+    
     if not ai_id or not urls_to_remove:
         return jsonify({"status": "error", "message": "Missing ai_id or urls_to_remove"}), 400
 
     # 1. Fetch current urls_crawled
-    res = supabase.table("business_info").select("urls_crawled").eq("id", ai_id).execute()
+    res = db_client.table("business_info").select("urls_crawled").eq("id", ai_id).execute()
     if not res.data or not isinstance(res.data, list):
         return jsonify({"status": "error", "message": "AI not found"}), 404
     current_urls = res.data[0].get("urls_crawled", [])
@@ -373,7 +381,7 @@ def remove_urls():
         print(f"[remove_urls] Successfully deleted {deleted_count} vectors from Pinecone")
 
         # 4. Update DB after successful deletion
-        supabase.table("business_info").update({
+        db_client.table("business_info").update({
             "urls_crawled": new_urls,
             "total_pages_crawled": len(new_urls)
         }).eq("id", ai_id).execute()
@@ -397,11 +405,14 @@ def remove_files():
     data = request.json
     ai_id = data.get("ai_id")
     file_urls = data.get("file_urls", [])
+    project = data.get("project", "growbro")
+    db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
+    
     if not ai_id or not file_urls:
         return jsonify({"status": "error", "message": "Missing ai_id or file_urls"}), 400
 
     try:
-        print(f"[remove_files] Removing {len(file_urls)} files from Pinecone index for AI {ai_id}")
+        print(f"[remove_files] Removing {len(file_urls)} files from Pinecone index for AI {ai_id} (Project: {project})")
         
         # Delete vectors for each file URL from Pinecone
         deleted_count = 0
@@ -417,7 +428,7 @@ def remove_files():
         # Update files_indexed count in business_info
         try:
             # First get current business_info to preserve other analytics
-            business_info_res = supabase.table("business_info").select("*").eq("id", ai_id).single().execute()
+            business_info_res = db_client.table("business_info").select("*").eq("id", ai_id).single().execute()
             business_info = business_info_res.data
             
             if business_info:
@@ -429,7 +440,7 @@ def remove_files():
                 
                 # Update business_info with new count
                 print(f"[remove_files] Updating files_indexed count from {current_files_indexed} to {new_files_indexed}")
-                supabase.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
+                db_client.table("business_info").update({"files_indexed": new_files_indexed}).eq("id", ai_id).execute()
         except Exception as e:
             print(f"[remove_files] Warning: Could not update files_indexed count: {e}")
         
