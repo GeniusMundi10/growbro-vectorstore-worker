@@ -53,21 +53,30 @@ def create_vectorstore():
         return jsonify({"status": "ignored", "message": "Build already in progress"}), 200
     PROCESSING_IDS.add(ai_id)
 
-    try:
-        agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie, project=project)
-        agent.extract_and_build_vectorstore(force_rebuild=True)
-        if agent.is_ready():
-            db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
-            db_client.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()
-            return jsonify({"status": "success", "message": f"Vectorstore created for {ai_id}"}), 200
-        else:
-            return jsonify({"status": "error", "message": "Vectorstore not ready after build"}), 500
-    except Exception as e:
-        print("[ERROR]", e)
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        PROCESSING_IDS.discard(ai_id)
+    import threading
+
+    def process_vectorstore(ai_id, session_cookie, project):
+        try:
+            agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie, project=project)
+            agent.extract_and_build_vectorstore(force_rebuild=True)
+            if agent.is_ready():
+                db_client = grochurch_supabase if project == "grochurch" and grochurch_supabase else supabase
+                db_client.table("business_info").update({"vectorstore_ready": True}).eq("id", ai_id).execute()
+                print(f"[create_vectorstore] Successfully built vectorstore for {ai_id}")
+            else:
+                print(f"[create_vectorstore] Vectorstore not ready after build for {ai_id}")
+        except Exception as e:
+            print("[ERROR]", e)
+            traceback.print_exc()
+        finally:
+            PROCESSING_IDS.discard(ai_id)
+
+    # Start the background thread
+    thread = threading.Thread(target=process_vectorstore, args=(ai_id, session_cookie, project))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"status": "processing", "message": f"Vectorstore creation started in background for {ai_id}"}), 202
 
 @app.route("/add-files", methods=["POST"])
 def add_files():
