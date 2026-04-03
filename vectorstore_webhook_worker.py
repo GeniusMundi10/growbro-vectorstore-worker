@@ -111,8 +111,14 @@ def add_files():
         res = db_client.table(table_name).select("url").eq("ai_id", ai_id).execute()
         existing_files = [item.get("url") for item in res.data] if res.data else []
         
-        # Filter out any files that are already in the vectorstore
-        new_file_urls = [url for url in file_urls if url not in existing_files]
+        # Check if namespace exists in Pinecone
+        namespace_missing = not check_namespace_exists(ai_id)
+        if namespace_missing:
+            print(f"[add_files] Namespace {ai_id} not found in Pinecone. Forcing re-indexing for files.")
+            new_file_urls = file_urls
+        else:
+            # Filter out any files that are already in the vectorstore entries in DB
+            new_file_urls = [url for url in file_urls if url not in existing_files]
         
         # Prepare analytics
         file_stats = {
@@ -433,6 +439,14 @@ def remove_files():
                 print(f"[remove_files] Deleted {deleted} vectors for file {file_url}")
             except Exception as e:
                 print(f"[remove_files] Error deleting vectors for file {file_url}: {e}")
+        
+        # ALSO: Delete from Supabase DB to ensure they don't block re-upload
+        try:
+            table_name = "ai_files" if project == "grochurch" else "ai_file"
+            print(f"[remove_files] Deleting {len(file_urls)} records from Supabase table {table_name}")
+            db_client.table(table_name).delete().eq("ai_id", ai_id).in_("url", file_urls).execute()
+        except Exception as e:
+            print(f"[remove_files] Error deleting from DB table: {e}")
         
         # Update files_indexed count in business_info
         try:
