@@ -29,9 +29,9 @@ SUPABASE_STORAGE_BUCKET = "vectorstores"
 
 app = Flask(__name__)
 
-# Enable CORS for the CRM frontend
+# Enable CORS for the CRM frontend and Grochurch web app
 from flask_cors import CORS
-CORS(app, origins=["https://crm.growbro.ai"])
+CORS(app, origins=["https://crm.growbro.ai", "https://app.grochurch.com", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002"])
 
 PROCESSING_IDS = set()
 

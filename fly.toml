@@ -1,4 +1,4 @@
-app = 'growbro-worker'  # Change to your unique Fly app name
+app = 'growbro-vectorstore-worker'
 primary_region = 'lhr'
 
 
