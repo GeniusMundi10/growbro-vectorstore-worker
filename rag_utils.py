@@ -156,9 +156,14 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                      # If for some reason we got data immediately
                      result = init_result
                 else:
-                     # Poll for completion
+                     # Poll for completion with timeout
                      print(f"[Firecrawl Debug] Polling crawl job {job_id} with session cookie...")
+                     poll_start = time.time()
+                     max_poll_seconds = 600  # 10 minute timeout
                      while True:
+                         if time.time() - poll_start > max_poll_seconds:
+                             print(f"[Firecrawl Debug] Job {job_id} timed out after {max_poll_seconds}s, aborting")
+                             raise RuntimeError(f"Firecrawl crawl job {job_id} timed out after {max_poll_seconds}s")
                          status_resp = requests.get(f"https://api.firecrawl.dev/v1/crawl/{job_id}", headers=headers, timeout=30)
                          status_resp.raise_for_status()
                          status_data = status_resp.json()
@@ -212,9 +217,14 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                              # If for some reason we got data immediately (unlikely for crawl)
                              result = init_result
                         else:
-                             # Poll for completion
+                             # Poll for completion with timeout
                              print(f"[Firecrawl Debug] Cleanup Polling crawl job {job_id}...")
+                             poll_start = time.time()
+                             max_poll_seconds = 600  # 10 minute timeout
                              while True:
+                                 if time.time() - poll_start > max_poll_seconds:
+                                     print(f"[Firecrawl Debug] Job {job_id} timed out after {max_poll_seconds}s, aborting")
+                                     raise RuntimeError(f"Firecrawl crawl job {job_id} timed out after {max_poll_seconds}s")
                                  status_resp = requests.get(f"https://api.firecrawl.dev/v1/crawl/{job_id}", headers=headers, timeout=30)
                                  status_resp.raise_for_status()
                                  status_data = status_resp.json()
@@ -262,7 +272,12 @@ def extract_website_text_with_firecrawl(urls, min_words=10, firecrawl_api_key=No
                         status = crawl_result
                     else:
                         crawl_id = crawl_result.id
-                        while True:
+                        poll_start = time.time()
+                    max_poll_seconds = 600  # 10 minute timeout
+                    while True:
+                            if time.time() - poll_start > max_poll_seconds:
+                                print(f"[Firecrawl Debug] SDK crawl timed out after {max_poll_seconds}s, aborting")
+                                raise RuntimeError(f"Firecrawl SDK crawl timed out after {max_poll_seconds}s")
                             status = app.check_crawl_status(crawl_id)
                             print(f"[Firecrawl Debug] Polling crawl status: {status}")
                             if status.status == 'completed':

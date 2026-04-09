@@ -35,6 +35,11 @@ CORS(app, origins=["https://crm.growbro.ai", "https://app.grochurch.com", "http:
 
 PROCESSING_IDS = set()
 
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint. Also used as self-ping to keep Fly machine alive during processing."""
+    return jsonify({"status": "ok", "active_jobs": len(PROCESSING_IDS)}), 200
+
 @app.route("/create-vectorstore", methods=["POST"])
 def create_vectorstore():
     """
@@ -55,6 +60,16 @@ def create_vectorstore():
 
     import threading
 
+    def keepalive_ping():
+        """Ping our own health endpoint every 30s to generate HTTP traffic and prevent Fly auto-stop."""
+        import time as _time
+        while ai_id in PROCESSING_IDS:
+            try:
+                requests.get("http://localhost:8001/health", timeout=5)
+            except Exception:
+                pass
+            _time.sleep(30)
+
     def process_vectorstore(ai_id, session_cookie, project):
         try:
             agent = DynamicRAGAgent(ai_id, session_cookie=session_cookie, project=project)
@@ -71,7 +86,11 @@ def create_vectorstore():
         finally:
             PROCESSING_IDS.discard(ai_id)
 
-    # Start the background thread
+    # Start keepalive ping thread (prevents Fly.io auto-stop during long crawls)
+    ping_thread = threading.Thread(target=keepalive_ping, daemon=True)
+    ping_thread.start()
+
+    # Start the background processing thread
     thread = threading.Thread(target=process_vectorstore, args=(ai_id, session_cookie, project))
     thread.daemon = True
     thread.start()

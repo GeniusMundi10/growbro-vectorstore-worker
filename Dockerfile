@@ -26,4 +26,4 @@ COPY pinecone_serverless_utils.py .
 EXPOSE 8001
 
 # Run the worker with Gunicorn (Production Server)
-CMD ["gunicorn", "--bind", "0.0.0.0:8001", "--workers", "4", "--timeout", "240", "vectorstore_webhook_worker:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8001", "--workers", "4", "--timeout", "900", "vectorstore_webhook_worker:app"]
